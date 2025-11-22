@@ -54,24 +54,20 @@ class WatsonAgent:
         tool_calls_made_ref = [self.tool_calls_made]  # Use list to allow modification
 
         @tool
-        def query_logs(query: str) -> str:
+        def list_tables() -> str:
             """
-            Run a natural language query against the logs.
-
-            Args:
-                query: The natural language query (e.g., 'Give me all logins for user X').
+            List all available tables in the database.
+            Always call this tool first to understand the data structure.
             """
             if not query_callback:
                 return "Error: Query callback not set"
 
-            query = query.strip()
-            if not query:
-                return "Error: Empty query provided"
-
+            query = "Show me all available tables in the database."
+            
             # Print query if verbose
             if verbose and query_print_callback:
                 try:
-                    query_print_callback(query, None)
+                    query_print_callback("list_tables()", None)
                 except Exception:
                     pass
 
@@ -82,29 +78,64 @@ class WatsonAgent:
             if verbose:
                 if query_print_callback:
                     try:
-                        query_print_callback(query, result)
+                        query_print_callback("list_tables()", result)
                     except Exception:
-                        # Fallback: direct print
-                        preview = result[:200] + ("..." if len(result) > 200 else "")
-                        if Colors:
-                            print(
-                                colorize("DB responded", Colors.RESPONSE + Colors.BOLD)
-                                + f': "{colorize(preview, Colors.RESPONSE)}"'
-                            )
-                        else:
-                            print(f'DB responded: "{preview}"')
+                        pass
+                # Fallback print handled in query wrapper if needed, but query_print_callback usually handles it
 
             tool_calls_made_ref[0] += 1
             self.tool_calls_made = tool_calls_made_ref[0]
             return result
 
         @tool
-        def finish_investigation(summary: str) -> str:
+        def query(table_name: str, query_string: str) -> str:
+            """
+            Run a natural language query against a specific table.
+
+            Args:
+                table_name: The name of the table to query (e.g., 'AuthenticationLogs').
+                query_string: The natural language query (e.g., 'Show me login counts grouped by user').
+            """
+            if not query_callback:
+                return "Error: Query callback not set"
+
+            query_string = query_string.strip()
+            table_name = table_name.strip()
+            
+            if not query_string or not table_name:
+                return "Error: Empty query or table name provided"
+
+            full_query = f"Querying table '{table_name}': {query_string}"
+
+            # Print query if verbose
+            if verbose and query_print_callback:
+                try:
+                    query_print_callback(full_query, None)
+                except Exception:
+                    pass
+
+            # Execute query via callback
+            result = query_callback(full_query) or "[Empty response]"
+
+            # Print result if verbose
+            if verbose:
+                if query_print_callback:
+                    try:
+                        query_print_callback(full_query, result)
+                    except Exception:
+                        pass
+
+            tool_calls_made_ref[0] += 1
+            self.tool_calls_made = tool_calls_made_ref[0]
+            return result
+
+        @tool
+        def finish_investigation(final_report: str) -> str:
             """
             Signal that you have completed your investigation and have reconstructed the full attack timeline.
 
             Args:
-                summary: Your final summary of the attack timeline and findings.
+                final_report: Your final summary of the attack timeline and findings.
             """
             if verbose:
                 print(
@@ -113,7 +144,7 @@ class WatsonAgent:
                         Colors.REWARD_POSITIVE + Colors.BOLD,
                     )
                 )
-            return f"Investigation marked as complete: {summary}"
+            return f"Investigation marked as complete: {final_report}"
 
         # Create agent with tools
         agent = Agent(
@@ -122,7 +153,7 @@ class WatsonAgent:
                 api_key=self._api_key,
                 base_url=self._base_url,
             ),
-            tools=[query_logs, finish_investigation],
+            tools=[list_tables, query, finish_investigation],
             instructions=get_agent_system_prompt(),
             markdown=True,
         )
@@ -158,7 +189,7 @@ class WatsonAgent:
         agent = self._create_agent()
 
         # Run investigation
-        prompt = initial_prompt or "Begin investigating the logs to uncover any security incidents."
+        prompt = initial_prompt or "Begin investigating the logs to uncover any security incidents. Start by listing the available tables."
 
         try:
             response = agent.run(prompt)

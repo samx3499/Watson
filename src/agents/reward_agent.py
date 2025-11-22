@@ -6,7 +6,11 @@ from agno.agent import Agent
 from agno.models.openai import OpenAIChat
 
 from src.utils.config import Config
-from src.prompts.reward import get_reward_evaluation_prompt, get_reward_system_prompt
+from src.prompts.reward import (
+    get_reward_evaluation_prompt,
+    get_reward_system_prompt,
+    get_incremental_reward_prompt,
+)
 from src.scenarios import AttackScenario
 
 
@@ -23,10 +27,10 @@ class RewardAgent:
                 id=Config.REWARD_MODEL,
                 api_key=Config.OPENROUTER_API_KEY,
                 base_url=Config.OPENROUTER_BASE_URL,
+                temperature=0.3,
             ),
             instructions=get_reward_system_prompt(),
             markdown=True,
-            temperature=0.3,
         )
 
     def calculate_reward(
@@ -94,12 +98,11 @@ class RewardAgent:
         scenario: AttackScenario,
         query: str,
         response: str,
-        query_number: int,  # noqa: ARG002
-        total_queries: int,
+        query_number: int,
+        total_queries: int,  # noqa: ARG002
     ) -> float:
         """
-        Calculate a simple incremental reward for a single query-response pair.
-        This is a lightweight heuristic reward, not a full LLM evaluation.
+        Calculate incremental reward using LLM evaluation.
 
         Args:
             scenario: The attack scenario
@@ -111,43 +114,48 @@ class RewardAgent:
         Returns:
             A reward score (typically -1 to +1)
         """
-        reward = 0.0
+        prompt = get_incremental_reward_prompt(
+            scenario_name=scenario.name,
+            scenario_type=scenario.attack_type,
+            scenario_description=scenario.description,
+            expected_indicators=scenario.expected_indicators,
+            query=query,
+            response=response,
+            query_number=query_number,
+        )
 
-        # Check if query is relevant to the scenario
-        query_lower = query.lower()
-        scenario_keywords = [
-            scenario.name.lower(),
-            scenario.attack_type.lower(),
-        ] + [ind.lower() for ind in scenario.expected_indicators]
+        prompt += "\n\nIMPORTANT: Respond with ONLY valid JSON, no other text."
 
-        # Reward for relevant queries
-        if any(keyword in query_lower for keyword in scenario_keywords):
-            reward += 0.3
+        # Call agent
+        try:
+            llm_response = self.agent.run(prompt)
+            content = (
+                llm_response.content
+                if hasattr(llm_response, "content")
+                else str(llm_response)
+            )
 
-        # Check if response contains useful information
-        response_lower = response.lower()
-        if len(response) > 50:  # Substantial response
-            reward += 0.2
+            # Parse JSON response
+            import json
 
-        # Check if response mentions indicators
-        for indicator in scenario.expected_indicators:
-            if indicator.lower() in response_lower:
-                reward += 0.5
-
-        # Penalize very short or empty queries
-        if len(query) < 10:
-            reward -= 0.2
-
-        # Small penalty for too many queries (efficiency)
-        if total_queries > 10:
-            reward -= 0.1
-
-        # Slight bonus for early relevant queries (exploration)
-        if query_number <= 3 and reward > 0:
-            reward += 0.1
-
-        # Normalize to roughly -1 to +1 range
-        return max(-1.0, min(1.0, reward))
+            try:
+                # Clean content (remove potential markdown code blocks)
+                if "```json" in content:
+                    content = content.split("```json")[1].split("```")[0]
+                elif "```" in content:
+                    content = content.split("```")[1]
+                
+                reward_data = json.loads(content.strip())
+                score = float(reward_data.get("score", 0.0))
+                
+                # Clamp score
+                return max(-1.0, min(1.0, score))
+            except (json.JSONDecodeError, ValueError) as e:
+                print(f"Error parsing reward response: {e}")
+                return 0.0
+        except Exception as e:
+            print(f"Error calling reward agent: {e}")
+            return 0.0
 
     def _summarize_conversation(self, conversation_history: List[Dict[str, Any]]) -> str:
         """Summarize the conversation history for reward evaluation."""

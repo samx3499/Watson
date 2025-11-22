@@ -916,6 +916,8 @@ recycle_bin:
     deleted: "2024-03-20T11:30:00Z"
     description: "Deleted staging archive in Recycle Bin"
 
+ground_truth:
+  what_happened: |
     On 2024-03-20 at 11:15:32 UTC, user michael.chen navigated to a malicious
     website at https://invoice-delivery.com/invoice. The website appeared to be a
     legitimate invoice delivery service.

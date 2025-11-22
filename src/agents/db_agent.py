@@ -32,10 +32,10 @@ class DatabaseAgent:
                 id=Config.ENVIRONMENT_MODEL,
                 api_key=Config.OPENROUTER_API_KEY,
                 base_url=Config.OPENROUTER_BASE_URL,
+                temperature=0.3,  # Lower temperature for more consistent responses
             ),
             instructions=get_environment_system_prompt(self.scenario.environment_knowledge),
             markdown=True,
-            temperature=0.3,  # Lower temperature for more consistent responses
         )
 
     def query(self, query_text: str, context: Optional[List[Dict[str, str]]] = None) -> str:

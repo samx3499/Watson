@@ -35,15 +35,16 @@ class LitWatsonAgent(agl.LitAgent[Dict[str, Any]]):
     ) -> float | None:
         """
         Run a single investigation episode.
-
+        
         Args:
             task: Dictionary containing the scenario data
             resources: Named resources from VERL (includes "main_llm")
             rollout: Rollout metadata
-
+            
         Returns:
             Reward score (float) or None if episode failed
         """
+        print(f"DEBUG: Starting rollout for task {task.get('id')}")
         # Extract scenario from task
         scenario = AttackScenario(
             id=task["id"],
@@ -76,10 +77,10 @@ class LitWatsonAgent(agl.LitAgent[Dict[str, Any]]):
             """Callback for Watson agent queries."""
             nonlocal cumulative_reward, queries_made
             queries_made += 1
-
+            
             # Execute query
             response = db_agent.query(query)
-
+            
             # Calculate incremental reward
             inc_reward = reward_agent.calculate_incremental_reward(
                 scenario=scenario,
@@ -89,8 +90,18 @@ class LitWatsonAgent(agl.LitAgent[Dict[str, Any]]):
                 total_queries=queries_made,
             )
             cumulative_reward += inc_reward
-
+            
+            print(f"Query {queries_made}: Reward {inc_reward:.2f} (Cumulative: {cumulative_reward:.2f})")
+            
             return response
+
+        # Create print callback
+        def query_print_callback(query: str, response: str | None = None) -> None:
+            """Callback to print queries and responses."""
+            if response is None:
+                print(f"\n\033[94mQuery:\033[0m {query}")
+            else:
+                print(f"\033[92mResponse:\033[0m {response}")
 
         # Create Watson agent with VERL's LLM endpoint
         watson_agent = WatsonAgent(
@@ -105,7 +116,8 @@ class LitWatsonAgent(agl.LitAgent[Dict[str, Any]]):
             investigation_result = watson_agent.investigate(
                 query_callback=query_callback,
                 initial_prompt="Begin investigating the logs to uncover any security incidents.",
-                verbose=False,
+                verbose=True,
+                query_print_callback=query_print_callback,
             )
 
             # Calculate final reward
@@ -118,6 +130,10 @@ class LitWatsonAgent(agl.LitAgent[Dict[str, Any]]):
             # Add final reward to cumulative reward
             final_reward = reward_data.get("total_reward", 0.0)
             cumulative_reward += final_reward
+
+            print("\n" + "=" * 40)
+            print(f"Final Report:\n{investigation_result.get('final_summary', 'No summary provided')}")
+            print("=" * 40 + "\n")
 
             return float(cumulative_reward)
 
