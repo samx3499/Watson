@@ -96,13 +96,20 @@ This bidirectional translation ensures the agent's training transfers seamlessly
   - Faster than pip and provides reproducible builds
   - The `uv.lock` file should be committed to version control for reproducibility
 
-### Potential Components
-- **RL Framework**: PPO, DQN, or custom RL algorithm
-- **LLM Backend**: OpenAI API, Anthropic API, or open-source models
-- **Tool Call Framework**: LangChain, AutoGPT, or custom implementation
-- **Translation Layer**: Query parser and result summarizer
-- **Evaluation**: Reward model LLM for training signal
-- **Data Collection**: OpenPipe SDK for logging and fine-tuning
+### Components
+- **RL Framework**: PPO/DQN (Planned)
+- **LLM Backend**: OpenRouter (OpenAI-compatible API) supporting GPT-4, Claude 3, etc.
+- **Tool Call Framework**: Custom implementation with structured tool definitions
+- **Environment**: LLM-simulated database with attack scenario knowledge
+- **Evaluation**: Reward model LLM + WandB for experiment tracking
+- **Data Collection**: OpenPipe SDK for logging and fine-tuning (Optional)
+
+## Configuration
+
+The project uses `dotenv` for configuration. Key environment variables:
+- `OPENROUTER_API_KEY`: Required for LLM inference
+- `WANDB_API_KEY`: Optional for experiment tracking
+- `OPENPIPE_API_KEY`: Optional for cloud logging/fine-tuning
 
 ## Related Work
 
@@ -135,8 +142,8 @@ This bidirectional translation ensures the agent's training transfers seamlessly
 ### Phase 3: Reward System
 - [x] Design reward calculation LLM
 - [x] Define reward metrics (attack detection, query efficiency, etc.)
-- [ ] Implement reward shaping strategies (basic implementation complete)
-- [ ] Test reward signal quality
+- [x] Implement reward shaping strategies
+- [x] Test reward signal quality
 
 ### Phase 4: RL Training
 - [ ] Choose RL algorithm

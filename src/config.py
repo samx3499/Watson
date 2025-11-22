@@ -30,9 +30,11 @@ class Config:
     WANDB_ENTITY: Optional[str] = os.getenv("WANDB_ENTITY")
     
     # Model configurations (OpenRouter model names)
-    AGENT_MODEL: str = os.getenv("AGENT_MODEL", "openai/gpt-4")
-    ENVIRONMENT_MODEL: str = os.getenv("ENVIRONMENT_MODEL", "openai/gpt-4")
-    REWARD_MODEL: str = os.getenv("REWARD_MODEL", "openai/gpt-4")
+    # Default to fastest models for speed and cost efficiency
+    # Try: google/gemini-1.5-flash, openai/gpt-4o-mini, anthropic/claude-3-haiku
+    AGENT_MODEL: str = os.getenv("AGENT_MODEL", "openai/gpt-4o-mini")  # Fast, reliable tool calling
+    ENVIRONMENT_MODEL: str = os.getenv("ENVIRONMENT_MODEL", "openai/gpt-4o-mini")  # Fast
+    REWARD_MODEL: str = os.getenv("REWARD_MODEL", "openai/gpt-4o-mini")  # Fast
     
     # OpenPipe tags for tracking different components
     AGENT_TAG: str = "watson-agent"

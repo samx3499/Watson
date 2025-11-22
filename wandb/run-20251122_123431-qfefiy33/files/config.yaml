@@ -1,0 +1,38 @@
+_wandb:
+    value:
+        cli_version: 0.23.0
+        e:
+            ljhx9byzde74kmuipmftjx32p8uaet6b:
+                codePath: example_run.py
+                codePathLocal: example_run.py
+                email: suyashtripathi82@gmail.com
+                executable: /Users/sam/Watson/.venv/bin/python3
+                git:
+                    commit: 1c2d0e24a9141fe7a90670282d8b7a0129099013
+                    remote: https://github.com/samx3499/Watson
+                host: Sams-Laptop.local
+                os: macOS-26.1-arm64-arm-64bit-Mach-O
+                program: /Users/sam/Watson/example_run.py
+                python: CPython 3.13.5
+                root: /Users/sam/Watson
+                startedAt: "2025-11-22T01:34:31.940480Z"
+                writerId: ljhx9byzde74kmuipmftjx32p8uaet6b
+        m: []
+        python_version: 3.13.5
+        t:
+            "1":
+                - 95
+            "2":
+                - 95
+            "3":
+                - 16
+            "4": 3.13.5
+            "5": 0.23.0
+            "12": 0.23.0
+            "13": darwin-arm64
+agent_model:
+    value: google/gemini-flash-1.5
+environment_model:
+    value: google/gemini-flash-1.5
+reward_model:
+    value: google/gemini-flash-1.5

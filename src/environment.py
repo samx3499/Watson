@@ -1,8 +1,9 @@
 """Environment LLM that simulates a database/log system."""
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Optional
 from openpipe import OpenAI
 from src.config import Config
 from src.scenarios import AttackScenario
+from src.prompts.environment import get_environment_system_prompt
 
 
 class EnvironmentLLM:
@@ -40,29 +41,7 @@ class EnvironmentLLM:
         
     def _build_system_prompt(self) -> str:
         """Build the system prompt for the environment LLM."""
-        return f"""You are a database/log system that responds to human-readable search queries.
-
-You have access to logs and databases that contain information about a potential security incident.
-
-ATTACK SCENARIO KNOWLEDGE:
-{self.scenario.environment_knowledge}
-
-Your role:
-1. Respond to queries as if you are querying a real database/log system
-2. Return human-readable summaries of what the query would return
-3. Only reveal information that would be accessible through the query
-4. Be realistic - don't reveal everything at once, let the agent discover through multiple queries
-5. Format responses as if they came from a database query (e.g., "Query returned 3 results: ...")
-
-Example:
-Query: "Show me all logins from unusual IP addresses"
-Response: "Found 3 logins from unusual IPs:
-- alice.smith@company.com from 203.0.113.45 at 2024-01-15 14:00:00 UTC
-- bob.jones@company.com from 203.0.113.46 at 2024-01-15 14:05:00 UTC  
-- carol.white@company.com from 203.0.113.47 at 2024-01-15 14:10:00 UTC"
-
-Remember: You know the attack scenario details, but reveal them gradually through natural query responses.
-"""
+        return get_environment_system_prompt(self.scenario.environment_knowledge)
     
     def query(self, query_text: str, context: Optional[List[Dict[str, str]]] = None) -> str:
         """

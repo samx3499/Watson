@@ -1,0 +1,37 @@
+{
+  "os": "macOS-26.1-arm64-arm-64bit-Mach-O",
+  "python": "CPython 3.13.5",
+  "startedAt": "2025-11-22T01:48:36.577402Z",
+  "program": "/Users/sam/Watson/example_run.py",
+  "codePath": "example_run.py",
+  "codePathLocal": "example_run.py",
+  "git": {
+    "remote": "https://github.com/samx3499/Watson",
+    "commit": "1c2d0e24a9141fe7a90670282d8b7a0129099013"
+  },
+  "email": "suyashtripathi82@gmail.com",
+  "root": "/Users/sam/Watson",
+  "host": "Sams-Laptop.local",
+  "executable": "/Users/sam/Watson/.venv/bin/python3",
+  "cpu_count": 8,
+  "cpu_count_logical": 8,
+  "disk": {
+    "/": {
+      "total": "494384795648",
+      "used": "377955557376"
+    }
+  },
+  "memory": {
+    "total": "17179869184"
+  },
+  "apple": {
+    "name": "Apple M3",
+    "ecpuCores": 4,
+    "pcpuCores": 4,
+    "gpuCores": 10,
+    "memoryGb": 16,
+    "swapTotalBytes": "2147483648",
+    "ramTotalBytes": "17179869184"
+  },
+  "writerId": "giy56lqucdfqexdnkw5zvyy023ovvf4v"
+}

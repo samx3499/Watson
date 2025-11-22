@@ -27,6 +27,7 @@ dependencies = [
     "wandb>=0.16.0",
     "fastapi>=0.121.3",
     "uvicorn>=0.33.0",
+    "colorama>=0.4.6",
 ]
 
 [project.optional-dependencies]

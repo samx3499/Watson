@@ -30,39 +30,15 @@ def main():
     print("="*60)
     print("Watson Episode Runner")
     print("="*60)
-    print(f"\nScenario: {scenario.name}")
-    print(f"Type: {scenario.attack_type}")
-    print(f"Difficulty: {scenario.difficulty}")
-    print(f"\nDescription: {scenario.description}")
-    print("\n" + "="*60)
     
-    # Run episode
+    # Run episode (verbose=True prints all the flow)
     runner = EpisodeRunner()
-    print("\nRunning episode...\n")
     
     try:
-        result = runner.run_episode(scenario)
+        result = runner.run_episode(scenario, verbose=True)
         
-        # Print results
-        print("\n" + "="*60)
-        print("Episode Results")
-        print("="*60)
-        print(f"\nTool calls made: {result['investigation']['tool_calls_made']}")
-        
-        reward = result['reward']
-        print(f"\nReward Breakdown:")
-        print(f"  Attack Detection: {reward.get('attack_detection', 'N/A')}/10")
-        print(f"  Indicator Discovery: {reward.get('indicator_discovery', 'N/A')}/10")
-        print(f"  Query Quality: {reward.get('query_quality', 'N/A')}/10")
-        print(f"  Efficiency: {reward.get('efficiency', 'N/A')}/10")
-        print(f"  Thoroughness: {reward.get('thoroughness', 'N/A')}/10")
-        print(f"  Total Reward: {reward.get('total_reward', 'N/A')}/50")
-        
-        if 'reasoning' in reward:
-            print(f"\nReasoning: {reward['reasoning']}")
-        
-        print(f"\nFinal Summary:")
-        print(result['investigation'].get('final_summary', 'N/A'))
+        # Episode runner already prints everything, so we're done
+        print(f"\nEpisode completed. Tool calls made: {result['investigation']['tool_calls_made']}")
         
     except Exception as e:
         print(f"\nError running episode: {e}")

@@ -59,9 +59,10 @@ This project trains a Large Language Model (LLM) to use **100s of tool calls** t
    # OPENPIPE_API_KEY=opk-...
    
    # Optional: Model configurations (OpenRouter model names)
-   AGENT_MODEL=openai/gpt-4
-   ENVIRONMENT_MODEL=openai/gpt-4
-   REWARD_MODEL=openai/gpt-4
+   # Defaults use fast models: gpt-4o-mini for agent/reward, gemini-flash-1.5 for environment
+   # AGENT_MODEL=openai/gpt-4o-mini
+   # ENVIRONMENT_MODEL=google/gemini-flash-1.5
+   # REWARD_MODEL=openai/gpt-4o-mini
    ```
    
    **Note**: OpenRouter is OpenAI-compatible, so you can use any model available on OpenRouter. 

@@ -64,10 +64,10 @@ Create a `.env` file in the project root:
 OPENAI_API_KEY=sk-your-key-here
 OPENPIPE_API_KEY=opk-your-key-here
 
-# Optional - Model configurations
-AGENT_MODEL=gpt-4
-ENVIRONMENT_MODEL=gpt-4
-REWARD_MODEL=gpt-4
+# Optional - Model configurations (defaults use fast models)
+# AGENT_MODEL=openai/gpt-4o-mini
+# ENVIRONMENT_MODEL=google/gemini-flash-1.5
+# REWARD_MODEL=openai/gpt-4o-mini
 ```
 
 ### 4. Verify Installation
@@ -107,8 +107,9 @@ Make sure your `.env` file exists and contains the required keys. The file shoul
 ### OpenRouter API errors
 
 - Verify your OpenRouter API key is correct
-- Check that you're using a valid model name (e.g., `openai/gpt-4`, `anthropic/claude-3-opus`)
+- Check that you're using a valid model name (e.g., `openai/gpt-4o-mini`, `google/gemini-flash-1.5`)
 - See https://openrouter.ai/models for available models
+- Default models are optimized for speed: `gpt-4o-mini` for agent/reward, `gemini-flash-1.5` for environment
 
 ### OpenPipe (optional)
 

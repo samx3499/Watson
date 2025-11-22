@@ -3,6 +3,7 @@ from typing import Dict, Any, List
 from openpipe import OpenAI
 from src.config import Config
 from src.scenarios import AttackScenario
+from src.prompts.reward import get_reward_evaluation_prompt, get_reward_system_prompt
 
 
 class RewardLLM:
@@ -25,7 +26,7 @@ class RewardLLM:
             api_key=Config.OPENROUTER_API_KEY,
             base_url=Config.OPENROUTER_BASE_URL,
             default_headers={
-                "HTTP-Referer": "https://github.com/yourusername/watson",
+                "HTTP-Referer": "https://github.com/samx3499/watson",
                 "X-Title": "Watson Reward",
             },
             openpipe=openpipe_config if openpipe_config else None
@@ -51,59 +52,39 @@ class RewardLLM:
         # Build prompt for reward calculation
         conversation_summary = self._summarize_conversation(agent_investigation.get("conversation_history", []))
         
-        prompt = f"""You are evaluating a security analyst's investigation of a potential security incident.
-
-ATTACK SCENARIO:
-Name: {scenario.name}
-Type: {scenario.attack_type}
-Description: {scenario.description}
-
-EXPECTED INDICATORS (what the analyst should have discovered):
-{chr(10).join(f"- {indicator}" for indicator in scenario.expected_indicators)}
-
-INVESTIGATION SUMMARY:
-{conversation_summary}
-
-TOOL CALLS MADE: {tool_calls_made}
-
-Evaluate the investigation on the following criteria (each scored 0-10):
-
-1. ATTACK DETECTION (0-10): Did the analyst identify the attack? How accurately?
-2. INDICATOR DISCOVERY (0-10): How many expected indicators were discovered?
-3. QUERY QUALITY (0-10): Were the queries well-formed and effective?
-4. EFFICIENCY (0-10): Was the investigation efficient (fewer tool calls = better, but not at expense of thoroughness)?
-5. THOROUGHNESS (0-10): Was the investigation comprehensive?
-
-Provide your evaluation as a JSON object with this structure:
-{{
-    "attack_detection": <score 0-10>,
-    "indicator_discovery": <score 0-10>,
-    "query_quality": <score 0-10>,
-    "efficiency": <score 0-10>,
-    "thoroughness": <score 0-10>,
-    "total_reward": <sum of all scores>,
-    "reasoning": "<brief explanation of scores>"
-}}
-
-Be strict but fair. Reward good detective work and penalize missed attacks or inefficient queries.
-"""
+        prompt = get_reward_evaluation_prompt(
+            scenario_name=scenario.name,
+            scenario_type=scenario.attack_type,
+            scenario_description=scenario.description,
+            expected_indicators=scenario.expected_indicators,
+            conversation_summary=conversation_summary,
+            tool_calls_made=tool_calls_made
+        )
         
-        response = self.client.chat.completions.create(
-            model=Config.REWARD_MODEL,
-            messages=[
-                {"role": "system", "content": "You are an expert security analyst evaluating investigations. Provide detailed, fair evaluations."},
-                {"role": "user", "content": prompt}
+        # Build request
+        request_params = {
+            "model": Config.REWARD_MODEL,
+            "messages": [
+                {"role": "system", "content": get_reward_system_prompt()},
+                {"role": "user", "content": prompt + "\n\nIMPORTANT: Respond with ONLY valid JSON, no other text."}
             ],
-            openpipe={
+            "temperature": 0.3,
+        }
+        
+        # Add JSON mode if supported
+        if "gemini" not in Config.REWARD_MODEL.lower():
+            request_params["response_format"] = {"type": "json_object"}
+        
+        if Config.OPENPIPE_API_KEY:
+            request_params["openpipe"] = {
                 "tags": {
                     "component": Config.REWARD_TAG,
                     "scenario_id": scenario.id,
                 },
-                "log_request": bool(Config.OPENPIPE_API_KEY),  # Only log if API key is set
-            } if Config.OPENPIPE_API_KEY else None,
-            temperature=0.3,
-            response_format={"type": "json_object"}
-        )
+                "log_request": True,
+            }
+        
+        response = self.client.chat.completions.create(**request_params)
         
         import json
         reward_data = json.loads(response.choices[0].message.content)
@@ -114,6 +95,66 @@ Be strict but fair. Reward good detective work and penalize missed attacks or in
             "scenario_difficulty": scenario.difficulty,
             "tool_calls_made": tool_calls_made,
         }
+    
+    def calculate_incremental_reward(
+        self,
+        scenario: AttackScenario,
+        query: str,
+        response: str,
+        query_number: int,  # noqa: ARG002
+        total_queries: int
+    ) -> float:
+        """
+        Calculate a simple incremental reward for a single query-response pair.
+        This is a lightweight heuristic reward, not a full LLM evaluation.
+        
+        Args:
+            scenario: The attack scenario
+            query: The query that was made
+            response: The response received
+            query_number: Which query this is (1-indexed)
+            total_queries: Total number of queries made so far
+            
+        Returns:
+            A reward score (typically -1 to +1)
+        """
+        reward = 0.0
+        
+        # Check if query is relevant to the scenario
+        query_lower = query.lower()
+        scenario_keywords = [
+            scenario.name.lower(),
+            scenario.attack_type.lower(),
+        ] + [ind.lower() for ind in scenario.expected_indicators]
+        
+        # Reward for relevant queries
+        if any(keyword in query_lower for keyword in scenario_keywords):
+            reward += 0.3
+        
+        # Check if response contains useful information
+        response_lower = response.lower()
+        if len(response) > 50:  # Substantial response
+            reward += 0.2
+        
+        # Check if response mentions indicators
+        for indicator in scenario.expected_indicators:
+            if indicator.lower() in response_lower:
+                reward += 0.5
+        
+        # Penalize very short or empty queries
+        if len(query) < 10:
+            reward -= 0.2
+        
+        # Small penalty for too many queries (efficiency)
+        if total_queries > 10:
+            reward -= 0.1
+        
+        # Slight bonus for early relevant queries (exploration)
+        if query_number <= 3 and reward > 0:
+            reward += 0.1
+        
+        # Normalize to roughly -1 to +1 range
+        return max(-1.0, min(1.0, reward))
     
     def _summarize_conversation(self, conversation_history: List[Dict[str, Any]]) -> str:
         """Summarize the conversation history for reward evaluation."""
