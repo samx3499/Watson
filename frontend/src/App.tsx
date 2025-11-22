@@ -371,6 +371,14 @@ export default function App() {
                 type="text" 
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (!isSimulating && prompt && investigateMutation.status !== 'pending') {
+                      handleExecute();
+                    }
+                  }
+                }}
                 placeholder="Ex: Investigate suspicious login activity from external IP 45.13.12.99..."
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-4 pr-32 py-3 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-slate-100 placeholder-slate-600"
               />
