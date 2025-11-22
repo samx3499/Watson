@@ -28,6 +28,45 @@ async def _simulate_env_query(query: str) -> str:
     return f"Simulated results for query: {query}"
 
 
+# --- Mocks moved from frontend ---
+SCENARIOS = [
+    {"id": "s1", "name": "APT29 Lateral Movement", "difficulty": "Hard", "description": "Simulates an adversary moving from a compromised edge node to the domain controller."},
+    {"id": "s2", "name": "Insider Data Exfiltration", "difficulty": "Medium", "description": "Detects unauthorized large file uploads by a privileged user during off-hours."},
+    {"id": "s3", "name": "Ransomware Deployment", "difficulty": "Hard", "description": "Identifies rapid file encryption patterns and shadow copy deletion commands."},
+]
+
+INITIAL_HOSTS = [
+    {"id": "gw", "name": "Gateway-01", "type": "firewall", "status": "safe", "x": 50, "y": 150},
+    {"id": "web", "name": "Web-FE-02", "type": "server", "status": "safe", "x": 200, "y": 100},
+    {"id": "app", "name": "App-Svc-04", "type": "server", "status": "safe", "x": 200, "y": 200},
+    {"id": "db", "name": "DB-PROD-01", "type": "database", "status": "safe", "x": 350, "y": 150},
+    {"id": "ad", "name": "AD-Core", "type": "server", "status": "safe", "x": 500, "y": 150},
+]
+
+SIMULATION_SEQUENCE = [
+    {"type": "thought", "content": "I need to investigate the initial alert regarding suspicious traffic from external IP 45.13.12.99.", "delay": 500},
+    {"type": "action", "content": "Search for all successful inbound connections from 45.13.12.99 in the last 4 hours.", "metadata": "Tool: Natural Language Query", "delay": 1200},
+    {"type": "translation", "content": "index=firewall src_ip=\"45.13.12.99\" action=\"allowed\" | stats count by dest_ip", "metadata": "Sim2Real: SQL/SPL Translator", "delay": 800},
+    {"type": "observation", "content": "Found 12 successful connections to Gateway-01 (192.168.1.5) on port 22 (SSH).", "delay": 1000},
+    {"type": "reward", "content": "Initial Access Point Identified", "rewardValue": 15, "delay": 500},
+    {"type": "thought", "content": "The attacker has SSH access to Gateway-01. I must check for lateral movement from that host.", "delay": 1500},
+    {"type": "action", "content": "Show me outbound connections from Gateway-01 to internal database ports.", "metadata": "Tool: Natural Language Query", "delay": 1200},
+    {"type": "translation", "content": "index=vpc_flow src_ip=\"192.168.1.5\" dest_port IN (1433, 5432, 3306) | table _time, dest_ip, bytes", "metadata": "Sim2Real: SQL/SPL Translator", "delay": 1000},
+    {"type": "observation", "content": "Connection detected: Gateway-01 -> DB-PROD-01 (Port 1433) at 02:22:10. Bytes: 2.5GB", "delay": 1200},
+    {"type": "reward", "content": "Lateral Movement & Data Staging Detected", "rewardValue": 35, "delay": 500},
+    {"type": "thought", "content": "High data transfer suggests exfiltration. I need to verify user context on the Database server.", "delay": 1500},
+    {"type": "action", "content": "List active sessions on DB-PROD-01 during the transfer window.", "metadata": "Tool: Natural Language Query", "delay": 1200},
+    {"type": "translation", "content": "index=wineventlog host=\"DB-PROD-01\" EventCode=4624 | bucket _time span=5m | stats count by User", "metadata": "Sim2Real: SQL/SPL Translator", "delay": 800},
+    {"type": "observation", "content": "User \"svc_backup\" active. This account typically operates at 03:00, not 02:22.", "delay": 1000},
+    {"type": "reward", "content": "Anomaly Confirmed: Credential Misuse", "rewardValue": 50, "delay": 500},
+]
+
+# Expose environment metadata
+@app.get("/environment")
+async def get_environment():
+    return {"scenarios": SCENARIOS, "hosts": INITIAL_HOSTS}
+
+
 async def _run_investigation_task(investigation_id: str, prompt: str, max_steps: int) -> None:
     """
     Background "agent" that performs a multi-hop investigation,
@@ -35,47 +74,41 @@ async def _run_investigation_task(investigation_id: str, prompt: str, max_steps:
     """
     q = EVENT_QUEUES[investigation_id]
     try:
-        await q.put({"type": "started", "message": "Investigation started", "prompt": prompt})
-        # initial parse
-        await asyncio.sleep(0.1)
-        await q.put({"type": "analysis", "message": "Parsing prompt and selecting first queries"})
+        # Start
+        await q.put({"type": "system", "content": "Investigation started", "timestamp": int(asyncio.get_event_loop().time() * 1000)})
 
-        # Multi-hop simulated queries
-        for step in range(1, max_steps + 1):
-            query_text = f"Step {step}: generate query from prompt '{prompt[:80]}'"
-            await q.put({"type": "query", "step": step, "query": query_text})
-            # simulate environment response
-            result = await _simulate_env_query(query_text)
-            await q.put({"type": "result", "step": step, "result": result})
+        # Walk the pre-defined SIMULATION_SEQUENCE and emit matching event types
+        step_count = 0
+        for item in SIMULATION_SEQUENCE:
+            # respect configured max_steps
+            if step_count >= max_steps:
+                break
+            await asyncio.sleep(item.get("delay", 300) / 1000.0)
+            step_count += 1
 
-            # simple heuristic event
-            if "suspicious" in result.lower() or step == max_steps:
-                # mark a finding
-                finding = {
-                    "type": "finding",
-                    "step": step,
-                    "severity": "high" if step == max_steps else "medium",
-                    "description": f"Simulated suspicious pattern discovered at step {step}",
-                }
-                await q.put(finding)
+            event = {"type": item.get("type"), "content": item.get("content"), "timestamp": int(asyncio.get_event_loop().time() * 1000)}
+            if item.get("metadata") is not None:
+                event["metadata"] = item.get("metadata")
+            if item.get("rewardValue") is not None:
+                event["rewardValue"] = item.get("rewardValue")
 
-            await asyncio.sleep(0.1)
+            # Emit the event
+            await q.put(event)
 
-        # compose final report (in a real system this would be assembled from findings)
+        # After sequence, assemble a final report
         final_report = {
             "investigation_id": investigation_id,
             "prompt": prompt,
-            "summary": f"Simulated investigation completed with {max_steps} steps.",
+            "summary": f"Simulated investigation completed with {step_count} steps.",
             "findings": [
                 {"id": "F-1", "description": "Suspicious login from rare country", "confidence": 0.92},
                 {"id": "F-2", "description": "Unusual data transfer pattern", "confidence": 0.78},
             ],
         }
-        # store report and emit final event
         INVESTIGATIONS[investigation_id]["report"] = final_report
         INVESTIGATIONS[investigation_id]["status"] = "completed"
-        await q.put({"type": "final_report_ready", "report_summary": final_report["summary"]})
-        await q.put({"type": "final_report", "report": final_report})
+        await q.put({"type": "system", "content": "Final report ready", "report_summary": final_report["summary"], "timestamp": int(asyncio.get_event_loop().time() * 1000)})
+        await q.put({"type": "final_report", "report": final_report, "timestamp": int(asyncio.get_event_loop().time() * 1000)})
     except asyncio.CancelledError:
         await q.put({"type": "stopped", "message": "Investigation cancelled"})
         INVESTIGATIONS[investigation_id]["status"] = "cancelled"

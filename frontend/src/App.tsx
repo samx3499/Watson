@@ -52,109 +52,7 @@ interface Scenario {
   description: string;
 }
 
-// --- Mock Data & Simulation Logic ---
-
-const SCENARIOS: Scenario[] = [
-  { id: 's1', name: 'APT29 Lateral Movement', difficulty: 'Hard', description: 'Simulates an adversary moving from a compromised edge node to the domain controller.' },
-  { id: 's2', name: 'Insider Data Exfiltration', difficulty: 'Medium', description: 'Detects unauthorized large file uploads by a privileged user during off-hours.' },
-  { id: 's3', name: 'Ransomware Deployment', difficulty: 'Critical', description: 'Identifies rapid file encryption patterns and shadow copy deletion commands.' },
-];
-
-const INITIAL_HOSTS: Host[] = [
-  { id: 'gw', name: 'Gateway-01', type: 'firewall', status: 'safe', x: 50, y: 150 },
-  { id: 'web', name: 'Web-FE-02', type: 'server', status: 'safe', x: 200, y: 100 },
-  { id: 'app', name: 'App-Svc-04', type: 'server', status: 'safe', x: 200, y: 200 },
-  { id: 'db', name: 'DB-PROD-01', type: 'database', status: 'safe', x: 350, y: 150 },
-  { id: 'ad', name: 'AD-Core', type: 'server', status: 'safe', x: 500, y: 150 },
-];
-
-// Sequence of events for the simulation
-const SIMULATION_SEQUENCE = [
-  {
-    type: 'thought',
-    content: 'I need to investigate the initial alert regarding suspicious traffic from external IP 45.13.12.99.',
-    delay: 500
-  },
-  {
-    type: 'action',
-    content: 'Search for all successful inbound connections from 45.13.12.99 in the last 4 hours.',
-    metadata: 'Tool: Natural Language Query',
-    delay: 1200
-  },
-  {
-    type: 'translation',
-    content: 'index=firewall src_ip="45.13.12.99" action="allowed" | stats count by dest_ip',
-    metadata: 'Sim2Real: SQL/SPL Translator',
-    delay: 800
-  },
-  {
-    type: 'observation',
-    content: 'Found 12 successful connections to Gateway-01 (192.168.1.5) on port 22 (SSH).',
-    delay: 1000
-  },
-  {
-    type: 'reward',
-    content: 'Initial Access Point Identified',
-    rewardValue: 15,
-    delay: 500
-  },
-  {
-    type: 'thought',
-    content: 'The attacker has SSH access to Gateway-01. I must check for lateral movement from that host.',
-    delay: 1500
-  },
-  {
-    type: 'action',
-    content: 'Show me outbound connections from Gateway-01 to internal database ports.',
-    metadata: 'Tool: Natural Language Query',
-    delay: 1200
-  },
-  {
-    type: 'translation',
-    content: 'index=vpc_flow src_ip="192.168.1.5" dest_port IN (1433, 5432, 3306) | table _time, dest_ip, bytes',
-    metadata: 'Sim2Real: SQL/SPL Translator',
-    delay: 1000
-  },
-  {
-    type: 'observation',
-    content: 'Connection detected: Gateway-01 -> DB-PROD-01 (Port 1433) at 02:22:10. Bytes: 2.5GB',
-    delay: 1200
-  },
-  {
-    type: 'reward',
-    content: 'Lateral Movement & Data Staging Detected',
-    rewardValue: 35,
-    delay: 500
-  },
-  {
-    type: 'thought',
-    content: 'High data transfer suggests exfiltration. I need to verify user context on the Database server.',
-    delay: 1500
-  },
-  {
-    type: 'action',
-    content: 'List active sessions on DB-PROD-01 during the transfer window.',
-    metadata: 'Tool: Natural Language Query',
-    delay: 1200
-  },
-  {
-    type: 'translation',
-    content: 'index=wineventlog host="DB-PROD-01" EventCode=4624 | bucket _time span=5m | stats count by User',
-    metadata: 'Sim2Real: SQL/SPL Translator',
-    delay: 800
-  },
-  {
-    type: 'observation',
-    content: 'User "svc_backup" active. This account typically operates at 03:00, not 02:22.',
-    delay: 1000
-  },
-  {
-    type: 'reward',
-    content: 'Anomaly Confirmed: Credential Misuse',
-    rewardValue: 50,
-    delay: 500
-  }
-];
+// Environment data and the simulation sequence are served by the backend (/api/environment)
 
 // --- Components ---
 
@@ -273,6 +171,8 @@ export default function App() {
   const [cumulativeReward, setCumulativeReward] = useState(0);
   const [simStep, setSimStep] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [hosts, setHosts] = useState<Host[]>([]);
+  const [scenarios, setScenarios] = useState<Scenario[]>([]);
 
   const investigateMutation = useMutation<any, Error, string>({
     mutationFn: async (prompt: string) => {
@@ -302,55 +202,117 @@ export default function App() {
     }
   }, [logs]);
 
-  const runSimulation = async () => {
-    if (!prompt) return;
-    setIsSimulating(true);
-    setSimStep(0);
-    setCumulativeReward(0);
-    setLogs([{ id: 'start', type: 'system', content: `Initializing Investigation in ${mode === 'sim' ? 'Simulated Environment' : 'Production'}...`, timestamp: Date.now() }]);
-
-    let currentReward = 0;
-    let stepCount = 0;
-
-    for (const step of SIMULATION_SEQUENCE) {
-      await new Promise(resolve => setTimeout(resolve, step.delay));
-      
-      // Update state
-      stepCount++;
-      setSimStep(stepCount);
-      
-      if (step.type === 'reward') {
-        currentReward += (step.rewardValue || 0);
-        setCumulativeReward(currentReward);
+  // Fetch environment from backend on mount
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await fetch('/api/environment');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!mounted) return;
+        setHosts(data.hosts || []);
+        setScenarios(data.scenarios || []);
+      } catch (e) {
+        // ignore fetch errors for now
       }
-
-      setLogs(prev => [...prev, {
-        id: `log-${Date.now()}`,
-        type: step.type as LogType,
-        content: step.content,
-        metadata: step.metadata,
-        rewardValue: step.rewardValue,
-        timestamp: Date.now()
-      }]);
-    }
-    
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    setLogs(prev => [...prev, { id: 'end', type: 'system', content: 'Investigation Complete. Incident Report Generated.', timestamp: Date.now() }]);
-    setIsSimulating(false);
-  };
+    })();
+    return () => { mounted = false };
+  }, []);
 
   const handleExecute = async () => {
     if (!prompt) return;
 
+    setIsSimulating(true);
+    setSimStep(0);
+    setCumulativeReward(0);
+
+    let investigationId: string | undefined;
     try {
-      // send prompt to backend first (fire-and-wait)
-      await investigateMutation.mutateAsync(prompt);
+      const resp = await investigateMutation.mutateAsync(prompt);
+      // backend returns { investigation_id }
+      investigationId = resp?.investigation_id || resp?.investigationId || resp?.id;
     } catch (e) {
-      // error logged via onError
+      setIsSimulating(false);
+      return;
     }
 
-    // then run local simulation (keeps previous behavior)
-    runSimulation();
+    if (!investigationId) {
+      setIsSimulating(false);
+      setLogs(prev => [...prev, { id: `err-${Date.now()}`, type: 'system', content: 'No investigation id returned by backend', timestamp: Date.now() }]);
+      return;
+    }
+
+    // Stream NDJSON events from backend
+    try {
+      const streamRes = await fetch(`/api/events/${investigationId}`);
+      if (!streamRes.ok || !streamRes.body) throw new Error(`Stream failed: ${streamRes.status}`);
+      const reader = streamRes.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let stepCounter = 0;
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const ev = JSON.parse(line);
+            // Map backend event types to LogEntry
+            const type = (ev.type as LogType) || 'system';
+            stepCounter += 1;
+            setSimStep(stepCounter);
+
+            if (type === 'reward' && ev.rewardValue) {
+              setCumulativeReward(prev => prev + Number(ev.rewardValue));
+            }
+
+            const entry: LogEntry = {
+              id: `evt-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,
+              type: (['thought','action','translation','observation','reward','system'].includes(type) ? type : 'system') as LogType,
+              content: ev.content || ev.message || JSON.stringify(ev),
+              metadata: ev.metadata,
+              rewardValue: ev.rewardValue,
+              timestamp: ev.timestamp || Date.now()
+            };
+            setLogs(prev => [...prev, entry]);
+
+            if (ev.type === 'final_report') {
+              setLogs(prev => [...prev, { id: `report-${Date.now()}`, type: 'system', content: 'Final report received', timestamp: Date.now() }]);
+            }
+            if (ev.type === 'stream_closed') {
+              // stream end signal
+            }
+          } catch (err) {
+            // ignore parse errors for now
+          }
+        }
+      }
+      // flush remaining buffer
+      if (buffer.trim()) {
+        try {
+          const ev = JSON.parse(buffer);
+          const type = (ev.type as LogType) || 'system';
+          const entry: LogEntry = {
+            id: `evt-${Date.now()}`,
+            type: (['thought','action','translation','observation','reward','system'].includes(type) ? type : 'system') as LogType,
+            content: ev.content || ev.message || JSON.stringify(ev),
+            metadata: ev.metadata,
+            rewardValue: ev.rewardValue,
+            timestamp: ev.timestamp || Date.now()
+          };
+          setLogs(prev => [...prev, entry]);
+        } catch (e) {}
+      }
+    } catch (e) {
+      setLogs(prev => [...prev, { id: `err-${Date.now()}`, type: 'system', content: `Streaming error: ${String(e)}`, timestamp: Date.now() }]);
+    } finally {
+      setIsSimulating(false);
+    }
   };
 
   return (
@@ -465,7 +427,7 @@ export default function App() {
             </div>
             <div className="flex-1 px-6 flex flex-col justify-center">
               <span className="text-[10px] text-slate-500 uppercase font-bold mb-1">Active Scenario</span>
-              <div className="text-sm font-medium text-blue-300 truncate">APT29 Lateral Movement</div>
+              <div className="text-sm font-medium text-blue-300 truncate">{scenarios[0]?.name ?? 'APT29 Lateral Movement'}</div>
             </div>
           </div>
 
@@ -483,7 +445,7 @@ export default function App() {
             </div>
             
             <div className="flex-1 border border-slate-800 rounded-lg bg-slate-950 relative shadow-inner">
-               <TopologyMap hosts={INITIAL_HOSTS} activeStep={simStep} />
+               <TopologyMap hosts={hosts} activeStep={simStep} />
             </div>
           </div>
 
