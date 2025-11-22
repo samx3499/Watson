@@ -1,6 +1,5 @@
 """Attack scenario definitions for Watson training."""
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List
@@ -26,7 +25,7 @@ class AttackScenario:
 
 def _load_scenario_from_yaml(yaml_path: Path) -> AttackScenario:
     """Load a scenario from a YAML file."""
-    with open(yaml_path, "r", encoding="utf-8") as f:
+    with open(yaml_path, encoding="utf-8") as f:
         data = yaml.safe_load(f)
 
     scenario_data = data["scenario"]
@@ -34,16 +33,16 @@ def _load_scenario_from_yaml(yaml_path: Path) -> AttackScenario:
 
     # Extract environment knowledge from ground_truth
     environment_knowledge_parts = []
-    
+
     # Add company background if available
     if "company_background" in data:
         environment_knowledge_parts.append(f"Company Background:\n{data['company_background']}")
-    
+
     if "what_happened" in ground_truth:
         environment_knowledge_parts.append(f"What happened:\n{ground_truth['what_happened']}")
     if "attack_method" in ground_truth:
         environment_knowledge_parts.append(f"Attack method:\n{ground_truth['attack_method']}")
-    
+
     # Add detailed artifacts for environment knowledge
     if "indicators_of_compromise" in ground_truth:
         iocs = ground_truth["indicators_of_compromise"]
@@ -53,9 +52,15 @@ def _load_scenario_from_yaml(yaml_path: Path) -> AttackScenario:
             )
         elif isinstance(iocs, list):
             # For list format, include them as indicators
-            environment_knowledge_parts.append(f"Key indicators:\n{chr(10).join(f'- {ioc}' for ioc in iocs)}")
+            environment_knowledge_parts.append(
+                f"Key indicators:\n{chr(10).join(f'- {ioc}' for ioc in iocs)}"
+            )
 
-    environment_knowledge = "\n\n".join(environment_knowledge_parts) if environment_knowledge_parts else scenario_data.get("name", "")
+    environment_knowledge = (
+        "\n\n".join(environment_knowledge_parts)
+        if environment_knowledge_parts
+        else scenario_data.get("name", "")
+    )
 
     # Extract expected indicators
     expected_indicators = []
@@ -99,7 +104,11 @@ def _load_scenario_from_yaml(yaml_path: Path) -> AttackScenario:
     # Build description from ground_truth if available
     description = scenario_data.get("description", "")
     if not description and "what_happened" in ground_truth:
-        description = ground_truth["what_happened"][:500] + "..." if len(ground_truth["what_happened"]) > 500 else ground_truth["what_happened"]
+        description = (
+            ground_truth["what_happened"][:500] + "..."
+            if len(ground_truth["what_happened"]) > 500
+            else ground_truth["what_happened"]
+        )
 
     return AttackScenario(
         id=scenario_data["id"],

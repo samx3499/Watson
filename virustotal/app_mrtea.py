@@ -1,9 +1,10 @@
 import base64
-import sys
 import os
+import sys
 import time
+
 import requests
-from flask import Flask, request, jsonify
+from flask import Flask, jsonify, request
 
 app = Flask(__name__)
 
@@ -15,7 +16,7 @@ VT_API_KEY = os.getenv("VT_API_KEY")  # default from env
 for arg in sys.argv[1:]:
     if arg.startswith("key="):
         VT_API_KEY = arg.split("key=")[1]
-        print(f"[+] VT_API_KEY set from command-line argument.")
+        print("[+] VT_API_KEY set from command-line argument.")
 # ------------------------------------------------
 
 

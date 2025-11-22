@@ -13,4 +13,3 @@ __all__ = [
     "get_scenario_by_id",
     "get_scenarios_by_difficulty",
 ]
-

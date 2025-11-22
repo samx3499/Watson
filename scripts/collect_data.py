@@ -1,7 +1,6 @@
 """Script to collect training data by running episodes."""
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -9,6 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.config import Config
+
 from src.scenarios import ATTACK_SCENARIOS, get_scenarios_by_difficulty
 
 # NOTE: EpisodeRunner removed - will be replaced with Agent-lightning Trainer
@@ -73,31 +73,12 @@ def main():
     print("WARNING: This script needs to be updated for Agent-lightning")
     print("EpisodeRunner has been removed. Use Agent-lightning Trainer instead.")
     print("=" * 60)
+    print("\nTODO: Rewrite using Agent-lightning Trainer")
+    print("Example:")
+    print("  from agentlightning import Trainer")
+    print("  trainer = Trainer(...)")
+    print("  trainer.fit(agent, train_dataset=scenarios, ...)")
     sys.exit(1)
-
-    # TODO: Rewrite using Agent-lightning Trainer
-    # Example:
-    # from agentlightning import Trainer
-    # trainer = Trainer(...)
-    # trainer.fit(agent, train_dataset=scenarios, ...)
-
-    # Save summary
-    summary_file = output_dir / "summary.json"
-    with open(summary_file, "w") as f:
-        json.dump(
-            {
-                "total_episodes": len(all_results),
-                "scenarios_run": [s.id for s in scenarios],
-                "results": all_results,
-            },
-            f,
-            indent=2,
-        )
-
-    print(f"\n{'=' * 60}")
-    print(f"Completed {len(all_results)} episodes")
-    print(f"Results saved to {output_dir}")
-    print(f"{'=' * 60}")
 
 
 if __name__ == "__main__":
