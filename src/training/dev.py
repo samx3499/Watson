@@ -3,7 +3,6 @@
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -17,7 +16,7 @@ from src.utils.config import Config
 @dataclass
 class MockLLM:
     model: str
-    
+
     def get_base_url(self, rollout_id: str, attempt_id: str) -> str:
         return Config.OPENROUTER_BASE_URL
 
@@ -68,7 +67,7 @@ def main():
     # Prepare mock resources
     resources = MockResources()
     resources["main_llm"] = MockLLM(model=Config.AGENT_MODEL)
-    
+
     # Prepare mock rollout metadata
     rollout_meta = MockRollout()
 

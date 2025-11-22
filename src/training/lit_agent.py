@@ -7,7 +7,6 @@ import agentlightning as agl
 from src.agents.db_agent import DatabaseAgent
 from src.agents.reward_agent import RewardAgent
 from src.agents.watson_agent import WatsonAgent
-from src.scenarios import AttackScenario
 
 
 class LitWatsonAgent(agl.LitAgent[Dict[str, Any]]):
@@ -35,26 +34,21 @@ class LitWatsonAgent(agl.LitAgent[Dict[str, Any]]):
     ) -> float | None:
         """
         Run a single investigation episode.
-        
+
         Args:
             task: Dictionary containing the scenario data
             resources: Named resources from VERL (includes "main_llm")
             rollout: Rollout metadata
-            
+
         Returns:
             Reward score (float) or None if episode failed
         """
-        print(f"DEBUG: Starting rollout for task {task.get('id')}")
-        # Extract scenario from task
-        scenario = AttackScenario(
-            id=task["id"],
-            name=task["name"],
-            description=task["description"],
-            attack_type=task["attack_type"],
-            environment_knowledge=task["environment_knowledge"],
-            expected_indicators=task["expected_indicators"],
-            difficulty=task.get("difficulty", 5),
-        )
+        print("DEBUG: Starting rollout for task")
+        # Load scenario from YAML string - reuse existing parsing logic
+        from src.scenarios.scenarios import _load_scenario_from_yaml
+
+        scenario_yaml = task["scenario_yaml"]
+        scenario = _load_scenario_from_yaml(scenario_yaml)
 
         # Get LLM resource from VERL
         llm: agl.LLM = resources["main_llm"]
@@ -77,10 +71,10 @@ class LitWatsonAgent(agl.LitAgent[Dict[str, Any]]):
             """Callback for Watson agent queries."""
             nonlocal cumulative_reward, queries_made
             queries_made += 1
-            
+
             # Execute query
             response = db_agent.query(query)
-            
+
             # Calculate incremental reward
             inc_reward = reward_agent.calculate_incremental_reward(
                 scenario=scenario,
@@ -90,9 +84,9 @@ class LitWatsonAgent(agl.LitAgent[Dict[str, Any]]):
                 total_queries=queries_made,
             )
             cumulative_reward += inc_reward
-            
+
             print(f"Query {queries_made}: Reward {inc_reward:.2f} (Cumulative: {cumulative_reward:.2f})")
-            
+
             return response
 
         # Create print callback

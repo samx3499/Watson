@@ -6,9 +6,9 @@ from agno.agent import Agent
 from agno.models.openai import OpenAIChat
 from agno.tools import tool
 
-from src.utils.config import Config
 from src.prompts.agent import get_agent_system_prompt
 from src.utils.colors import Colors, colorize
+from src.utils.config import Config
 
 
 class WatsonAgent:
@@ -63,7 +63,7 @@ class WatsonAgent:
                 return "Error: Query callback not set"
 
             query = "Show me all available tables in the database."
-            
+
             # Print query if verbose
             if verbose and query_print_callback:
                 try:
@@ -101,7 +101,7 @@ class WatsonAgent:
 
             query_string = query_string.strip()
             table_name = table_name.strip()
-            
+
             if not query_string or not table_name:
                 return "Error: Empty query or table name provided"
 

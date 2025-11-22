@@ -5,13 +5,13 @@ from typing import Any, Dict, List
 from agno.agent import Agent
 from agno.models.openai import OpenAIChat
 
-from src.utils.config import Config
 from src.prompts.reward import (
+    get_incremental_reward_prompt,
     get_reward_evaluation_prompt,
     get_reward_system_prompt,
-    get_incremental_reward_prompt,
 )
 from src.scenarios import AttackScenario
+from src.utils.config import Config
 
 
 class RewardAgent:
@@ -144,10 +144,10 @@ class RewardAgent:
                     content = content.split("```json")[1].split("```")[0]
                 elif "```" in content:
                     content = content.split("```")[1]
-                
+
                 reward_data = json.loads(content.strip())
                 score = float(reward_data.get("score", 0.0))
-                
+
                 # Clamp score
                 return max(-1.0, min(1.0, score))
             except (json.JSONDecodeError, ValueError) as e:

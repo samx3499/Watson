@@ -5,27 +5,52 @@ from typing import Any, Dict, List
 
 import agentlightning as agl
 
-from src.scenarios import ATTACK_SCENARIOS, get_scenarios_by_difficulty
+from src.scenarios import get_scenarios_by_difficulty
 from src.training.lit_agent import LitWatsonAgent
 from src.utils.config import Config
 
 
-def scenario_to_dict(scenario) -> Dict[str, Any]:
-    """Convert AttackScenario to dictionary for training."""
-    return {
-        "id": scenario.id,
-        "name": scenario.name,
-        "description": scenario.description,
-        "attack_type": scenario.attack_type,
-        "environment_knowledge": scenario.environment_knowledge,
-        "expected_indicators": scenario.expected_indicators,
-        "difficulty": scenario.difficulty,
-    }
-
-
 def prepare_dataset(scenarios: List) -> List[Dict[str, Any]]:
-    """Convert scenarios to training dataset format."""
-    return [scenario_to_dict(s) for s in scenarios]
+    """Convert scenarios to training dataset format - pass YAML content as string."""
+    from pathlib import Path
+
+    import yaml
+
+    scenarios_dir = Path(__file__).parent.parent / "scenarios"
+    dataset = []
+
+    # Load all YAML files and match by scenario ID
+    yaml_files = {}
+    for yaml_path in scenarios_dir.glob("*.yaml"):
+        if yaml_path.name.startswith("."):
+            continue
+        try:
+            with open(yaml_path, encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+                scenario_id = data.get("scenario", {}).get("id")
+                if scenario_id:
+                    yaml_files[scenario_id] = yaml_path
+        except Exception as e:
+            print(f"Warning: Failed to read {yaml_path}: {e}")
+            continue
+
+    for scenario in scenarios:
+        # Find the YAML file for this scenario by ID
+        yaml_file = yaml_files.get(scenario.id)
+
+        if yaml_file and yaml_file.exists():
+            # Read the entire YAML file as a string
+            with open(yaml_file, encoding="utf-8") as f:
+                yaml_content = f.read()
+            dataset.append({"scenario_yaml": yaml_content})
+        else:
+            # Fallback: use scenario data as dict (shouldn't happen)
+            print(f"Warning: Could not find YAML file for scenario {scenario.id}")
+            dataset.append({
+                "scenario_yaml": f"id: {scenario.id}\nname: {scenario.name}\ndescription: {scenario.description}"
+            })
+
+    return dataset
 
 
 def get_verl_config() -> Dict[str, Any]:

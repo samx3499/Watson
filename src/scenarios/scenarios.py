@@ -23,10 +23,15 @@ class AttackScenario:
     difficulty: int
 
 
-def _load_scenario_from_yaml(yaml_path: Path) -> AttackScenario:
-    """Load a scenario from a YAML file."""
-    with open(yaml_path, encoding="utf-8") as f:
-        data = yaml.safe_load(f)
+def _load_scenario_from_yaml(yaml_path: Path | str) -> AttackScenario:
+    """Load a scenario from a YAML file or YAML string."""
+    if isinstance(yaml_path, str):
+        # If it's a string, parse it directly
+        data = yaml.safe_load(yaml_path)
+    else:
+        # If it's a Path, read from file
+        with open(yaml_path, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
 
     scenario_data = data["scenario"]
     ground_truth = data.get("ground_truth", {})
