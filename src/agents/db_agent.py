@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 from agno.agent import Agent
 from agno.models.openai import OpenAIChat
 
-from src.config import Config
+from src.utils.config import Config
 from src.prompts.environment import get_environment_system_prompt
 from src.scenarios import AttackScenario
 

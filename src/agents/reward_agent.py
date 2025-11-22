@@ -5,7 +5,7 @@ from typing import Any, Dict, List
 from agno.agent import Agent
 from agno.models.openai import OpenAIChat
 
-from src.config import Config
+from src.utils.config import Config
 from src.prompts.reward import get_reward_evaluation_prompt, get_reward_system_prompt
 from src.scenarios import AttackScenario
 

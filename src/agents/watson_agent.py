@@ -6,7 +6,7 @@ from agno.agent import Agent
 from agno.models.openai import OpenAIChat
 from agno.tools import tool
 
-from src.config import Config
+from src.utils.config import Config
 from src.prompts.agent import get_agent_system_prompt
 from src.utils.colors import Colors, colorize
 
@@ -17,12 +17,21 @@ class WatsonAgent:
     Uses Agno for cleaner tool calling.
     """
 
-    def __init__(self, max_tool_calls: int = 100):
+    def __init__(
+        self,
+        max_tool_calls: int = 100,
+        model_id: Optional[str] = None,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+    ):
         """
         Initialize the agent.
 
         Args:
             max_tool_calls: Maximum number of tool calls allowed in a single episode
+            model_id: Optional model ID (defaults to Config.AGENT_MODEL)
+            api_key: Optional API key (defaults to Config.OPENROUTER_API_KEY)
+            base_url: Optional base URL (defaults to Config.OPENROUTER_BASE_URL)
         """
         self.max_tool_calls = max_tool_calls
         self.tool_calls_made = 0
@@ -30,6 +39,11 @@ class WatsonAgent:
         self._query_callback: Optional[Callable[[str], str]] = None
         self._verbose = False
         self._query_print_callback: Optional[Callable[[str, Optional[str]], None]] = None
+
+        # Store model configuration (can be overridden for VERL)
+        self._model_id = model_id or Config.AGENT_MODEL
+        self._api_key = api_key or Config.OPENROUTER_API_KEY
+        self._base_url = base_url or Config.OPENROUTER_BASE_URL
 
     def _create_agent(self) -> Agent:
         """Create an Agno agent with tools."""
@@ -104,9 +118,9 @@ class WatsonAgent:
         # Create agent with tools
         agent = Agent(
             model=OpenAIChat(
-                id=Config.AGENT_MODEL,
-                api_key=Config.OPENROUTER_API_KEY,
-                base_url=Config.OPENROUTER_BASE_URL,
+                id=self._model_id,
+                api_key=self._api_key,
+                base_url=self._base_url,
             ),
             tools=[query_logs, finish_investigation],
             instructions=get_agent_system_prompt(),
