@@ -1,0 +1,1078 @@
+scenario:
+  id: "ransomware-driveby-001"
+  name: "Ransomware Attack via Drive-By Download"
+  attack_type: "Ransomware"
+  difficulty: 9
+  date_discovered: "2024-03-20"
+  affected_system: "Windows 10 Pro (Build 19045)"
+  user: "michael.chen@acmecorp.com"
+  workstation: "WS-ACME-0789"
+
+company_background: |
+  ACME Healthcare Systems is a regional healthcare provider operating multiple
+  clinics and a small hospital. The company operates 150 Windows-based workstations
+  across three locations:
+  - Main hospital: Chicago, IL (100 workstations)
+  - Clinic A: Evanston, IL (35 workstations)
+  - Clinic B: Naperville, IL (15 workstations)
+  
+  Business Operations:
+  - Patient care and medical records management
+  - Electronic Health Records (EHR) system
+  - Medical billing and insurance processing
+  - Laboratory information systems
+  - Pharmacy management
+  
+  Infrastructure:
+  - 1 public-facing web server (Windows Server 2019) hosting patient portal
+  - Active Directory domain: ACME.local
+  - 145 domain-joined Windows workstations (mix of Windows 10 Pro and Windows 11 Enterprise)
+  - 5 standalone workstations (contractors/guests)
+  - File server: \\fileserver01 (Windows Server 2019)
+  - Email server: Microsoft Exchange 2019 on-premises
+  - EHR server: Epic Systems (Windows Server 2019)
+  - Database servers: SQL Server 2019 (patient data, HIPAA compliant)
+  
+  Software Environment:
+  - Remote Management: Splashtop Business (legitimate RMM tool used by IT department)
+  - Browsers: Microsoft Edge (primary), Google Chrome (secondary)
+  - Office Suite: Microsoft Office 365 (Outlook, Word, Excel, PowerPoint)
+  - PDF Reader: Adobe Acrobat Reader DC (standard deployment)
+  - EHR: Epic MyChart, Epic Hyperspace
+  - Medical Imaging: PACS viewer, DICOM software
+  - Billing: Cerner Revenue Cycle
+  - Antivirus: Windows Defender + Microsoft Defender for Endpoint
+  - Backup: Veeam Backup & Replication
+  - Monitoring: Nagios Core
+  
+  User Base:
+  - 142 active domain users
+  - 8 service accounts
+  - Normal business hours: 07:00-19:00 CST (13:00-01:00 UTC) - extended hours for healthcare
+  - IT department: 5 users (frequent use of Splashtop for remote support)
+  - Clinical staff: 65 users (nurses, doctors, medical assistants - Epic EHR access)
+  - Administrative: 25 users (front desk, scheduling, patient registration)
+  - Billing: 12 users (Cerner Revenue Cycle, insurance processing)
+  - Laboratory: 8 users (lab information systems, PACS access)
+  - Pharmacy: 6 users (pharmacy management software)
+  - Management: 12 users (access to sensitive patient data and financial reports)
+  - HR: 8 users (access to employee PII)
+  - Compliance: 5 users (HIPAA compliance, audit access)
+  
+  Normal Activity Patterns:
+  - IT staff regularly use Splashtop.exe for remote support (legitimate)
+  - Clinical staff frequently access Epic Hyperspace EHR system
+  - Administrative staff regularly process patient registrations and scheduling
+  - Billing team frequently access Cerner Revenue Cycle for insurance claims
+  - Users regularly access internal file shares (\\fileserver01)
+  - Browser history shows normal business-related website visits (medical references, insurance portals)
+  - Multiple users access SharePoint for document collaboration
+  - Regular scheduled tasks for backups, database maintenance, and system updates
+  - Normal logon patterns during business hours (07:00-19:00 CST)
+  - Occasional after-hours access by IT staff for maintenance
+  - Regular PDF file downloads from legitimate business partners (insurance forms, medical records)
+  - Normal file creation/modification in Documents and Desktop folders
+  - Scheduled tasks for Windows Updates, Epic system maintenance, and database backups
+  - Frequent access to PACS system for medical imaging
+
+initial_detection: |
+  On 2024-03-20 at 15:00:00 UTC, multiple users reported that their computers
+  were displaying ransom notes and their files appeared to be encrypted. The
+  ransom note file "README_DECRYPT.txt" was found on the desktop and in multiple
+  directories. Users could not access their documents, images, and other files.
+  Initial investigation revealed:
+  - Ransom note files present on multiple workstations
+  - Files with .locked extension (encrypted files)
+  - Suspicious executable in Startup folder
+  - Recent process execution chain anomalies
+  - Evidence of data staging and exfiltration before encryption
+
+timeline_summary: |
+  2024-03-20 11:15:32 UTC - User navigated to malicious website
+  2024-03-20 11:19:12 UTC - Malicious file downloaded and executed
+  2024-03-20 11:19:25 UTC - Ransomware payload installed
+  2024-03-20 11:20:00 UTC - Data staging began (files collected for exfiltration)
+  2024-03-20 11:25:00 UTC - Data exfiltration started
+  2024-03-20 11:30:00 UTC - Encryption process initiated
+  2024-03-20 11:45:00 UTC - Ransom notes created
+  2024-03-20 15:00:00 UTC - Incident discovered by users
+
+ground_truth:
+  note: |
+    IMPORTANT: In a real Windows environment, there are MILLIONS of forensic artifacts
+    (MFT entries, USN Journal entries, Event Log entries, Registry keys, etc.) from
+    normal user activity across 150 workstations and 142 users. The artifacts listed
+    below are THE SUSPICIOUS ENTRIES (IOCs) that indicate the ransomware attack. The
+    agent must identify these specific indicators among the vast amount of normal
+    activity. Many users perform normal activities (Splashtop usage by IT staff, Epic
+    Hyperspace EHR access by clinical staff, normal PDF opens, regular browser usage,
+    file share access). The agent must distinguish between benign operations and attack
+    indicators. For example:
+    - Splashtop.exe execution is BENIGN (legitimate IT tool)
+    - Epic Hyperspace.exe execution is BENIGN (legitimate EHR system)
+    - Normal PDF opens from Outlook are BENIGN
+    - Suspicious PDF opens from browser with exploit are SUSPICIOUS
+    - Executables in Startup folder are SUSPICIOUS
+    - Normal scheduled tasks for backups are BENIGN
+    - Suspicious scheduled tasks created by user are SUSPICIOUS
+  
+  what_happened: |
+    On 2024-03-20 at 11:15:32 UTC, user michael.chen navigated to a malicious
+    website at https://invoice-delivery.com/invoice. The website appeared to be a
+    legitimate invoice delivery service.
+    
+    At 11:19:12 UTC, a weaponized PDF file (Invoice_2024-03-20_ACME.pdf) was
+    automatically downloaded to the TEMP folder and opened in Adobe Acrobat Reader
+    DC (version 23.003.20284).
+    
+    At 11:19:15 UTC, the PDF exploited CVE-2023-21608, a buffer overflow
+    vulnerability in Adobe Acrobat Reader DC. The exploit executed embedded
+    shellcode that dropped a VBScript file (invoice_temp.vbs) to the TEMP folder.
+    
+    At 11:19:16 UTC, the VBScript dropper was executed via wscript.exe. The dropper
+    extracted and decoded the main ransomware payload, writing it to the Startup
+    folder as WindowsUpdateService.exe.
+    
+    At 11:19:25 UTC, the ransomware payload was installed and executed. The dropper
+    then deleted itself. A configuration file (config.dat) was created with C2
+    settings and encryption parameters.
+    
+    At 11:20:00 UTC, the ransomware entered the data staging phase. It began
+    systematically scanning the file system for valuable files (documents, images,
+    databases, archives) and collecting them into a staging directory
+    (%TEMP%\\staging\\collected_files.zip). The ransomware prioritized files based
+    on extensions (.docx, .xlsx, .pdf, .jpg, .png, .db, .sql) and file size.
+    
+    At 11:24:45 UTC, the staging archive reached approximately 50 MB, containing
+    hundreds of files collected from Documents, Desktop, Pictures, and network shares.
+    
+    At 11:25:00 UTC, the ransomware initiated the data exfiltration phase. It
+    established an HTTPS connection to the C2 server and began uploading the
+    staging archive. The exfiltration used chunked transfer encoding to avoid
+    detection and included retry logic for failed transfers.
+    
+    At 11:29:30 UTC, the exfiltration completed successfully. The staging archive
+    was deleted from the local system to remove evidence of data theft.
+    
+    At 11:30:00 UTC, the ransomware entered the encryption phase. It began
+    encrypting files using AES-256 encryption with RSA-2048 public key encryption
+    of the AES keys. The ransomware used a hybrid cryptosystem where each file
+    received a unique AES key, which was then encrypted with the attacker's RSA
+    public key embedded in the malware. Files were encrypted in-place, with the
+    original file content replaced by encrypted data and the file extension changed
+    to .locked.
+    
+    The encryption process targeted:
+    - User documents (Documents, Desktop, Downloads folders)
+    - Images and media files
+    - Database files
+    - Archive files
+    - Network share files (if accessible)
+    
+    The ransomware skipped system files, executables in Program Files, and files
+    smaller than 1 KB to avoid breaking the operating system.
+    
+    At 11:45:00 UTC, after encryption completed, the ransomware created ransom note
+    files (README_DECRYPT.txt) in multiple locations:
+    - Desktop
+    - Root of each encrypted directory
+    - Network shares (if accessible)
+    
+    The ransom note contained instructions for payment, a unique victim ID, and a
+    Tor-based payment portal URL. The ransomware also modified the desktop
+    wallpaper to display the ransom message.
+    
+    At 11:20:20 UTC, the ransomware established persistence by:
+    1. Creating a Run key in the registry
+    2. Creating a Scheduled Task (WindowsUpdateMaintenance) to run every hour
+    3. Ensuring the executable remains in the Startup folder
+    
+    The ransomware continued running in the background, monitoring for new files
+    and maintaining persistence until the system was rebooted or the malware was
+    removed.
+
+  attack_method: |
+    This was a ransomware attack using a multi-phase approach:
+    
+    Initial Access:
+    - Drive-by download via malicious website
+    - Weaponized PDF exploiting CVE-2023-21608 (Adobe Acrobat Reader buffer overflow)
+    - VBScript dropper for payload delivery
+    - Ransomware payload installation to Startup folder
+    
+    Data Staging:
+    - Systematic file system scanning for valuable files
+    - File collection based on extension and size criteria
+    - Compression into staging archive (ZIP format)
+    - Staging directory created in TEMP folder
+    
+    Data Exfiltration:
+    - HTTPS connection to C2 server (45.146.164.110:443)
+    - Chunked transfer encoding for large file uploads
+    - Retry logic for failed transfers
+    - Staging archive deleted after successful exfiltration
+    
+    Encryption:
+    - Hybrid cryptosystem: AES-256 for file encryption, RSA-2048 for key encryption
+    - Unique AES key per file, encrypted with attacker's RSA public key
+    - In-place file encryption (original content overwritten)
+    - File extension changed to .locked
+    - Selective targeting (skips system files, small files)
+    
+    Persistence:
+    - Registry Run key
+    - Scheduled Task (hourly execution)
+    - Startup folder executable
+    - Background process monitoring
+
+  ransomware_details: |
+    The ransomware variant used in this attack implements a sophisticated
+    multi-phase operation:
+    
+    Encryption Algorithm:
+    - Symmetric encryption: AES-256 in CBC mode with random IV per file
+    - Asymmetric encryption: RSA-2048 for AES key encryption
+    - Key derivation: Each file receives a unique AES key generated using
+      CryptGenRandom() Windows API
+    - Key storage: Encrypted AES keys stored in file header or separate key file
+    
+    File Targeting:
+    - Extension-based targeting: .docx, .xlsx, .pdf, .jpg, .png, .db, .sql, etc.
+    - Size filtering: Files between 1 KB and 100 MB
+    - Directory exclusions: System directories, Program Files, Windows folder
+    - Network share access: Attempts to encrypt files on mapped network drives
+    
+    Anti-Forensics:
+    - Staging archive deletion after exfiltration
+    - Dropper self-deletion
+    - Minimal logging (only essential operations)
+    - Process injection techniques to evade detection
+    
+    Ransom Note:
+    - HTML-based ransom note with embedded styling
+    - Unique victim ID for payment tracking
+    - Tor-based payment portal (onion service)
+    - Bitcoin wallet address for payment
+    - Threat of data publication if ransom not paid
+
+  data_stolen: |
+    Based on staging archive analysis and network monitoring:
+    - Approximately 50 MB of data exfiltrated before encryption
+    - File types: Documents (.docx, .xlsx, .pdf), Images (.jpg, .png), Databases
+    - Estimated 500+ files collected during staging phase
+    - Data included: Project proposals, financial documents, customer databases,
+      internal communications, personal files
+
+  indicators_of_compromise:
+    suspicious_windows_artifacts: |
+      The following are THE SUSPICIOUS ARTIFACTS (IOCs) found in the Windows forensic
+      analysis. In reality, there are millions of normal entries across the domain,
+      but these specific artifacts indicate the ransomware attack:
+      
+      WINDOWS EVENT LOGS:
+      - Security Log Event ID 4688 (11:19:15 UTC): AcroRd32.exe spawned from msedge.exe
+      - Security Log Event ID 4688 (11:19:16 UTC): wscript.exe spawned from AcroRd32.exe (SUSPICIOUS)
+      - Security Log Event ID 4688 (11:19:25 UTC): WindowsUpdateService.exe from Startup folder (SUSPICIOUS)
+      - Security Log Event ID 5145 (11:20:00 UTC): Network share access during data staging
+      - Security Log Event ID 5145 (11:25:00 UTC): Network share access during data exfiltration
+      - Security Log Event ID 4698 (11:20:20 UTC): Scheduled task created (WindowsUpdateMaintenance)
+      - System Log Event ID 1001 (11:19:15 UTC): AcroRd32.exe crash (exploit execution)
+      - System Log Event ID 7034 (11:19:25 UTC): WindowsUpdateService service terminated unexpectedly
+      
+      MFT ENTRIES:
+      - Invoice_2024-03-20_ACME.pdf (created 11:19:12 UTC) - Weaponized PDF
+      - invoice_temp.vbs (created 11:19:15 UTC, deleted 11:19:25 UTC) - VBScript dropper
+      - WindowsUpdateService.exe in Startup folder (created 11:19:25 UTC) - Ransomware payload
+      - config.dat in Startup folder (created 11:19:25 UTC) - Configuration file
+      - collected_files.zip in TEMP\staging (created 11:20:00 UTC, deleted 11:30:00 UTC) - Staging archive
+      - Multiple .locked files (created 11:30:10 UTC onwards) - Encrypted files
+      - README_DECRYPT.txt (created 11:45:00 UTC) - Ransom note
+      
+      USN JOURNAL ENTRIES:
+      - USN 23456789 (11:19:12 UTC): PDF file created in TEMP
+      - USN 23456790 (11:19:15 UTC): VBScript dropper created
+      - USN 23456791 (11:19:25 UTC): Dropper deleted (self-deletion)
+      - USN 23456792 (11:19:25 UTC): WindowsUpdateService.exe created in Startup folder
+      - USN 23456793 (11:20:00 UTC): Staging archive created
+      - USN 23456794 (11:24:45 UTC): Staging archive updated
+      - USN 23456795 (11:30:00 UTC): Staging archive deleted after exfiltration
+      - USN 23456796 (11:30:10 UTC): Encrypted file created (.locked extension)
+      - USN 23456797 (11:45:00 UTC): Ransom note created
+      
+      AMCACHE ENTRIES:
+      - AcroRd32.exe execution (11:19:15 UTC) - PDF reader with exploit
+      - wscript.exe execution (11:19:16 UTC) - VBScript dropper execution
+      - WindowsUpdateService.exe execution (11:19:25 UTC, multiple executions until 11:45:00 UTC)
+      
+      PREFETCH FILES:
+      - ACRORD32.EXE-ABC123DF.pf showing PDF and VBS file access
+      - WSCRIPT.EXE-XYZ789GH.pf showing dropper and payload access
+      - WINDOWSUPDATESERVICE.EXE-DEF456IJ.pf showing file access patterns during staging/encryption
+      
+      REGISTRY ARTIFACTS:
+      - Run key: WindowsUpdateService in HKCU\Software\Microsoft\Windows\CurrentVersion\Run
+      - Scheduled Task: WindowsUpdateMaintenance registry entry
+      - UserAssist: WindowsUpdateService.exe execution (run_count: 15)
+      - Shellbags: TEMP folder, Startup folder, Documents folder access
+      - RecentDocs: Invoice_2024-03-20_ACME.pdf entry
+      
+      BROWSER ARTIFACTS:
+      - Edge History: Visit to invoice-delivery.com/invoice (11:15:32 UTC)
+      - Edge Downloads: Invoice_2024-03-20_ACME.pdf downloaded (11:19:12 UTC)
+      
+      SRUM ENTRIES:
+      - WindowsUpdateService.exe high CPU usage during staging (11:20:00 UTC)
+      - WindowsUpdateService.exe large outbound data transfer during exfiltration (11:25:00 UTC, 52MB sent)
+      - WindowsUpdateService.exe high CPU usage during encryption (11:30:00 UTC, 900000 CPU time)
+      
+      SCHEDULED TASK XML:
+      - WindowsUpdateMaintenance task XML file (created 11:20:20 UTC)
+      
+      RECYCLE BIN:
+      - Deleted invoice_temp.vbs dropper (deleted 11:19:25 UTC)
+      - Deleted collected_files.zip staging archive (deleted 11:30:00 UTC)
+
+windows_event_logs:
+  security_log:
+    # Benign entries - normal user activity
+    - event_id: 4624
+      timestamp: "2024-03-20T11:00:00Z"
+      logon_type: 2
+      account: "ACME\\john.smith"
+      source_ip: "192.168.1.10"
+      workstation: "WS-ACME-0010"
+      mft_reference: "0x0000000000000001:0x00002000"
+      usn: 23456000
+      description: "Normal user logon - IT staff"
+    
+    - event_id: 4688
+      timestamp: "2024-03-20T11:05:00Z"
+      process_name: "Splashtop.exe"
+      process_id: 1001
+      parent_process: "explorer.exe"
+      parent_process_id: 500
+      command_line: "\"C:\\Program Files\\Splashtop\\Splashtop Business\\Splashtop.exe\" --service"
+      user: "ACME\\john.smith"
+      mft_reference: "0x0000000000000001:0x00002001"
+      usn: 23456001
+      description: "Splashtop execution - legitimate IT remote support tool"
+    
+    - event_id: 4688
+      timestamp: "2024-03-20T11:07:00Z"
+      process_name: "Hyperspace.exe"
+      process_id: 2000
+      parent_process: "explorer.exe"
+      parent_process_id: 500
+      command_line: "\"C:\\Program Files\\Epic\\Hyperspace\\Hyperspace.exe\""
+      user: "ACME\\dr.jones"
+      mft_reference: "0x0000000000000001:0x00002002"
+      usn: 23456002
+      description: "Epic Hyperspace EHR - legitimate clinical application"
+    
+    - event_id: 4688
+      timestamp: "2024-03-20T11:10:00Z"
+      process_name: "AcroRd32.exe"
+      process_id: 2001
+      parent_process: "OUTLOOK.EXE"
+      parent_process_id: 1500
+      command_line: "\"C:\\Program Files\\Adobe\\Acrobat Reader DC\\Reader\\AcroRd32.exe\" \"C:\\Users\\jane.doe\\Downloads\\Invoice_Legitimate.pdf\""
+      user: "ACME\\jane.doe"
+      mft_reference: "0x0000000000000001:0x00002002"
+      usn: 23456002
+      description: "PDF reader - legitimate business document opened"
+    
+    - event_id: 4688
+      timestamp: "2024-03-20T11:19:15Z"
+      process_name: "AcroRd32.exe"
+      process_id: 1234
+      parent_process: "msedge.exe"
+      parent_process_id: 5678
+      command_line: "\"C:\\Program Files\\Adobe\\Acrobat Reader DC\\Reader\\AcroRd32.exe\" /t \"%TEMP%\\Invoice_2024-03-20_ACME.pdf\""
+      user: "ACME\\michael.chen"
+      mft_reference: "0x0000000000000001:0x00003000"
+      usn: 23456789
+      description: "PDF reader process started from browser"
+    
+    # SUSPICIOUS ENTRY - Related to ransomware attack
+    - event_id: 4688
+      timestamp: "2024-03-20T11:19:16Z"
+      process_name: "wscript.exe"
+      process_id: 2345
+      parent_process: "AcroRd32.exe"
+      parent_process_id: 1234
+      command_line: "wscript.exe //B //E:VBScript \"%TEMP%\\invoice_temp.vbs\""
+      user: "ACME\\michael.chen"
+      mft_reference: "0x0000000000000001:0x00003001"
+      usn: 23456790
+      description: "VBScript execution spawned from PDF reader"
+    
+    # SUSPICIOUS ENTRY - Related to ransomware attack
+    - event_id: 4688
+      timestamp: "2024-03-20T11:19:25Z"
+      process_name: "WindowsUpdateService.exe"
+      process_id: 3456
+      parent_process: "wscript.exe"
+      parent_process_id: 2345
+      command_line: "\"%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\WindowsUpdateService.exe\""
+      user: "ACME\\michael.chen"
+      mft_reference: "0x0000000000000001:0x00003002"
+      usn: 23456791
+      description: "Executable from Startup folder"
+    
+    - event_id: 5145
+      timestamp: "2024-03-20T11:20:00Z"
+      account: "ACME\\michael.chen"
+      share_name: "\\\\fileserver01\\users\\michael.chen"
+      source_ip: "192.168.1.89"
+      mft_reference: "0x0000000000000001:0x00003006"
+      usn: 23456795
+      description: "Network share access - data staging"
+    
+    - event_id: 5145
+      timestamp: "2024-03-20T11:25:00Z"
+      account: "ACME\\michael.chen"
+      share_name: "\\\\fileserver01\\users\\michael.chen"
+      source_ip: "192.168.1.89"
+      mft_reference: "0x0000000000000001:0x00003007"
+      usn: 23456796
+      description: "Network share access - data exfiltration"
+    
+    # SUSPICIOUS ENTRY - Related to ransomware attack
+    - event_id: 4698
+      timestamp: "2024-03-20T11:20:20Z"
+      task_name: "WindowsUpdateMaintenance"
+      task_path: "\\WindowsUpdateMaintenance"
+      user: "ACME\\michael.chen"
+      action: "Create"
+      mft_reference: "0x0000000000000001:0x00003003"
+      usn: 23456792
+      description: "Scheduled task created for persistence"
+  
+  system_log:
+    - event_id: 7034
+      timestamp: "2024-03-20T11:05:00Z"
+      service_name: "Splashtop.exe"
+      mft_reference: "0x0000000000000001:0x00002003"
+      usn: 23456003
+      description: "Splashtop service started - legitimate IT tool"
+    
+    - event_id: 7034
+      timestamp: "2024-03-20T11:07:00Z"
+      service_name: "Hyperspace.exe"
+      mft_reference: "0x0000000000000001:0x00002004"
+      usn: 23456004
+      description: "Epic Hyperspace EHR started - legitimate clinical application"
+    
+    # SUSPICIOUS ENTRY - Related to ransomware attack
+    - event_id: 1001
+      timestamp: "2024-03-20T11:19:15Z"
+      application: "AcroRd32.exe"
+      faulting_module: "AcroRd32.exe"
+      exception_code: "0xc0000005"
+      mft_reference: "0x0000000000000001:0x00003004"
+      usn: 23456793
+      description: "PDF reader crashed due to exploit (buffer overflow)"
+    
+    # SUSPICIOUS ENTRY - Related to ransomware attack
+    - event_id: 7034
+      timestamp: "2024-03-20T11:19:25Z"
+      service_name: "WindowsUpdateService"
+      mft_reference: "0x0000000000000001:0x00003005"
+      usn: 23456794
+      description: "Service terminated unexpectedly (malware process)"
+
+mft_entries:
+  # SUSPICIOUS ENTRIES - Related to ransomware attack
+  - file_path: "C:\\Users\\michael.chen\\AppData\\Local\\Temp\\Invoice_2024-03-20_ACME.pdf"
+    mft_entry: 0x0000000000000001:0x00004001
+    sequence_number: 1
+    created: "2024-03-20T11:19:12Z"
+    modified: "2024-03-20T11:19:12Z"
+    accessed: "2024-03-20T11:19:15Z"
+    size: 245760
+    file_attributes: "ARCHIVE"
+    file_hash: "SHA256: 9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e"
+    description: "Weaponized PDF downloaded from malicious website"
+  
+  - file_path: "C:\\Users\\michael.chen\\AppData\\Local\\Temp\\invoice_temp.vbs"
+    mft_entry: 0x0000000000000001:0x00004002
+    sequence_number: 1
+    created: "2024-03-20T11:19:15Z"
+    modified: "2024-03-20T11:19:15Z"
+    accessed: "2024-03-20T11:19:16Z"
+    deleted: "2024-03-20T11:19:25Z"
+    size: 4096
+    file_attributes: "ARCHIVE"
+    file_hash: "SHA256: 2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a"
+    description: "VBScript dropper (deleted but MFT entry recoverable)"
+  
+  - file_path: "C:\\Users\\michael.chen\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\WindowsUpdateService.exe"
+    mft_entry: 0x0000000000000001:0x00004003
+    sequence_number: 1
+    created: "2024-03-20T11:19:25Z"
+    modified: "2024-03-20T11:19:25Z"
+    accessed: "2024-03-20T11:19:25Z"
+    size: 786432
+    file_attributes: "ARCHIVE"
+    file_hash: "SHA256: 3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b"
+    description: "Ransomware payload executable"
+  
+  - file_path: "C:\\Users\\michael.chen\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\config.dat"
+    mft_entry: 0x0000000000000001:0x00004004
+    sequence_number: 1
+    created: "2024-03-20T11:19:25Z"
+    modified: "2024-03-20T11:19:25Z"
+    accessed: "2024-03-20T11:19:25Z"
+    size: 1024
+    file_attributes: "ARCHIVE"
+    description: "Ransomware configuration file"
+  
+  - file_path: "C:\\Users\\michael.chen\\AppData\\Local\\Temp\\staging\\collected_files.zip"
+    mft_entry: 0x0000000000000001:0x00004005
+    sequence_number: 1
+    created: "2024-03-20T11:20:00Z"
+    modified: "2024-03-20T11:24:45Z"
+    accessed: "2024-03-20T11:25:00Z"
+    deleted: "2024-03-20T11:30:00Z"
+    size: 52428800
+    file_attributes: "ARCHIVE"
+    description: "Staging archive containing files for exfiltration"
+  
+  - file_path: "C:\\Users\\michael.chen\\Documents\\project_proposal.docx.locked"
+    mft_entry: 0x0000000000000001:0x00004009
+    sequence_number: 1
+    created: "2024-03-20T11:30:15Z"
+    modified: "2024-03-20T11:30:15Z"
+    accessed: "2024-03-20T11:30:15Z"
+    size: 245760
+    file_attributes: "ARCHIVE"
+    description: "Encrypted file (original was project_proposal.docx)"
+  
+  - file_path: "C:\\Users\\michael.chen\\Desktop\\README_DECRYPT.txt"
+    mft_entry: 0x0000000000000001:0x00004010
+    sequence_number: 1
+    created: "2024-03-20T11:45:00Z"
+    modified: "2024-03-20T11:45:00Z"
+    accessed: "2024-03-20T11:45:00Z"
+    size: 4096
+    file_attributes: "ARCHIVE"
+    description: "Ransom note file"
+  
+  - file_path: "C:\\Windows\\Prefetch\\ACRORD32.EXE-ABC123DF.pf"
+    mft_entry: 0x0000000000000001:0x00004006
+    sequence_number: 1
+    created: "2024-03-20T11:19:15Z"
+    modified: "2024-03-20T11:19:15Z"
+    accessed: "2024-03-20T11:19:15Z"
+    size: 98304
+    file_attributes: "ARCHIVE"
+    description: "Prefetch for PDF reader"
+  
+  - file_path: "C:\\Windows\\Prefetch\\WSCRIPT.EXE-XYZ789GH.pf"
+    mft_entry: 0x0000000000000001:0x00004007
+    sequence_number: 1
+    created: "2024-03-20T11:19:16Z"
+    modified: "2024-03-20T11:19:16Z"
+    accessed: "2024-03-20T11:19:16Z"
+    size: 49152
+    file_attributes: "ARCHIVE"
+    description: "Prefetch for wscript.exe"
+  
+  - file_path: "C:\\Windows\\Prefetch\\WINDOWSUPDATESERVICE.EXE-DEF456IJ.pf"
+    mft_entry: 0x0000000000000001:0x00004008
+    sequence_number: 1
+    created: "2024-03-20T11:19:25Z"
+    modified: "2024-03-20T11:45:00Z"
+    accessed: "2024-03-20T11:45:00Z"
+    size: 131072
+    file_attributes: "ARCHIVE"
+    description: "Prefetch for ransomware executable (multiple executions)"
+
+usn_journal_entries:
+  - usn: 23456789
+    timestamp: "2024-03-20T11:19:12Z"
+    file_reference: "0x0000000000000001:0x00004001"
+    parent_reference: "0x0000000000000001:0x00001003"
+    reason: "FILE_CREATE"
+    source_info: "0x00000000"
+    security_id: 1001
+    file_attributes: "ARCHIVE"
+    file_name: "Invoice_2024-03-20_ACME.pdf"
+    description: "PDF file downloaded to TEMP folder"
+  
+  - usn: 23456790
+    timestamp: "2024-03-20T11:19:15Z"
+    file_reference: "0x0000000000000001:0x00004002"
+    parent_reference: "0x0000000000000001:0x00001003"
+    reason: "FILE_CREATE, DATA_EXTEND"
+    source_info: "0x00000000"
+    security_id: 1001
+    file_attributes: "ARCHIVE"
+    file_name: "invoice_temp.vbs"
+    description: "VBScript dropper created by exploit"
+  
+  - usn: 23456791
+    timestamp: "2024-03-20T11:19:25Z"
+    file_reference: "0x0000000000000001:0x00004002"
+    parent_reference: "0x0000000000000001:0x00001003"
+    reason: "FILE_DELETE"
+    source_info: "0x00000000"
+    security_id: 1001
+    file_attributes: "ARCHIVE"
+    file_name: "invoice_temp.vbs"
+    description: "Dropper self-deleted after execution"
+  
+  - usn: 23456792
+    timestamp: "2024-03-20T11:19:25Z"
+    file_reference: "0x0000000000000001:0x00004003"
+    parent_reference: "0x0000000000000001:0x00001004"
+    reason: "FILE_CREATE, DATA_EXTEND"
+    source_info: "0x00000000"
+    security_id: 1001
+    file_attributes: "ARCHIVE"
+    file_name: "WindowsUpdateService.exe"
+    description: "Ransomware executable created in Startup folder"
+  
+  - usn: 23456793
+    timestamp: "2024-03-20T11:20:00Z"
+    file_reference: "0x0000000000000001:0x00004005"
+    parent_reference: "0x0000000000000001:0x00001005"
+    reason: "FILE_CREATE, DATA_EXTEND"
+    source_info: "0x00000000"
+    security_id: 1001
+    file_attributes: "ARCHIVE"
+    file_name: "collected_files.zip"
+    description: "Staging archive created for data collection"
+  
+  - usn: 23456794
+    timestamp: "2024-03-20T11:24:45Z"
+    file_reference: "0x0000000000000001:0x00004005"
+    parent_reference: "0x0000000000000001:0x00001005"
+    reason: "DATA_EXTEND"
+    source_info: "0x00000000"
+    security_id: 1001
+    file_attributes: "ARCHIVE"
+    file_name: "collected_files.zip"
+    description: "Staging archive updated with collected files"
+  
+  - usn: 23456795
+    timestamp: "2024-03-20T11:30:00Z"
+    file_reference: "0x0000000000000001:0x00004005"
+    parent_reference: "0x0000000000000001:0x00001005"
+    reason: "FILE_DELETE"
+    source_info: "0x00000000"
+    security_id: 1001
+    file_attributes: "ARCHIVE"
+    file_name: "collected_files.zip"
+    description: "Staging archive deleted after exfiltration"
+  
+  - usn: 23456796
+    timestamp: "2024-03-20T11:30:10Z"
+    file_reference: "0x0000000000000001:0x00004009"
+    parent_reference: "0x0000000000000001:0x00001006"
+    reason: "FILE_CREATE, DATA_EXTEND"
+    source_info: "0x00000000"
+    security_id: 1001
+    file_attributes: "ARCHIVE"
+    file_name: "project_proposal.docx.locked"
+    description: "Encrypted file created"
+  
+  - usn: 23456797
+    timestamp: "2024-03-20T11:45:00Z"
+    file_reference: "0x0000000000000001:0x00004010"
+    parent_reference: "0x0000000000000001:0x00001007"
+    reason: "FILE_CREATE, DATA_EXTEND"
+    source_info: "0x00000000"
+    security_id: 1001
+    file_attributes: "ARCHIVE"
+    file_name: "README_DECRYPT.txt"
+    description: "Ransom note file created"
+
+amcache_entries:
+  # Benign entries - normal program executions
+  - program_id: "{11111111-1111-1111-1111-111111111111}"
+    file_path: "C:\\Program Files\\Splashtop\\Splashtop Business\\Splashtop.exe"
+    file_size: 5242880
+    file_hash: "SHA1: A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0"
+    first_execution: "2024-03-20T11:05:00Z"
+    last_execution: "2024-03-20T11:05:00Z"
+    execution_count: 1
+    description: "Splashtop execution - legitimate IT remote support tool"
+  
+  - program_id: "{33333333-3333-3333-3333-333333333333}"
+    file_path: "C:\\Program Files\\Epic\\Hyperspace\\Hyperspace.exe"
+    file_size: 15728640
+    file_hash: "SHA1: C1C2C3C4C5C6C7C8C9C0C1C2C3C4C5C6C7C8C9C0C1"
+    first_execution: "2024-03-20T11:07:00Z"
+    last_execution: "2024-03-20T11:07:00Z"
+    execution_count: 1
+    description: "Epic Hyperspace EHR - legitimate clinical application"
+  
+  - program_id: "{22222222-2222-2222-2222-222222222222}"
+    file_path: "C:\\Program Files\\Adobe\\Acrobat Reader DC\\Reader\\AcroRd32.exe"
+    file_size: 15728640
+    file_hash: "SHA1: B1B2B3B4B5B6B7B8B9B0B1B2B3B4B5B6B7B8B9B0B1"
+    first_execution: "2024-03-20T11:10:00Z"
+    last_execution: "2024-03-20T11:10:00Z"
+    execution_count: 1
+    description: "PDF reader - legitimate business document opened by jane.doe"
+  
+  - program_id: "{12345678-1234-1234-1234-123456789012}"
+    file_path: "C:\\Program Files\\Adobe\\Acrobat Reader DC\\Reader\\AcroRd32.exe"
+    file_size: 15728640
+    file_hash: "SHA1: C1D2E3F4A5B6C7D8E9F0A1B2C3D4E5F6A7B8C9D0E1"
+    first_execution: "2024-03-20T11:19:15Z"
+    last_execution: "2024-03-20T11:19:15Z"
+    execution_count: 1
+    description: "PDF reader execution recorded"
+  
+  - program_id: "{87654321-4321-4321-4321-210987654321}"
+    file_path: "C:\\Windows\\System32\\wscript.exe"
+    file_size: 24576
+    file_hash: "SHA1: D2E3F4A5B6C7D8E9F0A1B2C3D4E5F6A7B8C9D0E1F2"
+    first_execution: "2024-03-20T11:19:16Z"
+    last_execution: "2024-03-20T11:19:16Z"
+    execution_count: 1
+    description: "wscript.exe execution recorded"
+  
+  - program_id: "{ABCDEF12-3456-7890-ABCD-EF1234567890}"
+    file_path: "C:\\Users\\michael.chen\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\WindowsUpdateService.exe"
+    file_size: 786432
+    file_hash: "SHA1: E3F4A5B6C7D8E9F0A1B2C3D4E5F6A7B8C9D0E1F2A3"
+    first_execution: "2024-03-20T11:19:25Z"
+    last_execution: "2024-03-20T11:45:00Z"
+    execution_count: 15
+    description: "Ransomware executable recorded (multiple executions during encryption)"
+
+prefetch_files:
+  - file_path: "C:\\Windows\\Prefetch\\ACRORD32.EXE-ABC123DF.pf"
+    executable_path: "C:\\Program Files\\Adobe\\Acrobat Reader DC\\Reader\\AcroRd32.exe"
+    run_count: 1
+    last_execution: "2024-03-20T11:19:15Z"
+    created: "2024-03-20T11:19:15Z"
+    files_accessed:
+      - "C:\\Users\\michael.chen\\AppData\\Local\\Temp\\Invoice_2024-03-20_ACME.pdf"
+      - "C:\\Users\\michael.chen\\AppData\\Local\\Temp\\invoice_temp.vbs"
+    description: "PDF reader prefetch showing PDF and VBS file access"
+  
+  - file_path: "C:\\Windows\\Prefetch\\WSCRIPT.EXE-XYZ789GH.pf"
+    executable_path: "C:\\Windows\\System32\\wscript.exe"
+    run_count: 1
+    last_execution: "2024-03-20T11:19:16Z"
+    created: "2024-03-20T11:19:16Z"
+    files_accessed:
+      - "C:\\Users\\michael.chen\\AppData\\Local\\Temp\\invoice_temp.vbs"
+      - "C:\\Users\\michael.chen\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\WindowsUpdateService.exe"
+    description: "wscript.exe prefetch showing dropper and payload access"
+  
+  - file_path: "C:\\Windows\\Prefetch\\WINDOWSUPDATESERVICE.EXE-DEF456IJ.pf"
+    executable_path: "C:\\Users\\michael.chen\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\WindowsUpdateService.exe"
+    run_count: 15
+    last_execution: "2024-03-20T11:45:00Z"
+    created: "2024-03-20T11:19:25Z"
+    files_accessed:
+      - "C:\\Users\\michael.chen\\Documents"
+      - "C:\\Users\\michael.chen\\Desktop"
+      - "C:\\Users\\michael.chen\\Pictures"
+      - "C:\\Users\\michael.chen\\AppData\\Local\\Temp\\staging\\collected_files.zip"
+      - "C:\\Users\\michael.chen\\Desktop\\README_DECRYPT.txt"
+    description: "Ransomware prefetch showing file access patterns during staging and encryption"
+
+registry_artifacts:
+  run_key:
+    - key: "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+      value_name: "WindowsUpdateService"
+      value_data: "\"%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\WindowsUpdateService.exe\""
+      type: "REG_SZ"
+      modified: "2024-03-20T11:20:20Z"
+      hive_file: "C:\\Users\\michael.chen\\NTUSER.DAT"
+      description: "Registry Run key for persistence"
+  
+  scheduled_tasks:
+    - key: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Schedule\\TaskCache\\Tasks\\{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"
+      task_name: "WindowsUpdateMaintenance"
+      task_path: "\\WindowsUpdateMaintenance"
+      created: "2024-03-20T11:20:20Z"
+      author: "ACME\\michael.chen"
+      actions:
+        - action: "EXEC"
+          path: "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\WindowsUpdateService.exe"
+      hive_file: "C:\\Windows\\System32\\config\\SOFTWARE"
+      description: "Scheduled task registry entry"
+  
+  user_assist:
+    - key: "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\UserAssist\\{CEBFF5CD-ACE2-4F4F-9178-9926F41749EA}\\Count"
+      value_name: "HRZR_EHACVQY"
+      decoded_name: "WindowsUpdateService.exe"
+      last_execution: "2024-03-20T11:19:25Z"
+      run_count: 15
+      focus_count: 0
+      focus_time: 0
+      description: "UserAssist entry showing ransomware execution"
+  
+  shellbags:
+    - key: "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\Shell\\Bags\\1\\Desktop"
+      folder_path: "C:\\Users\\michael.chen\\AppData\\Local\\Temp"
+      last_accessed: "2024-03-20T11:19:25Z"
+      description: "Shellbag showing TEMP folder access"
+    
+    - key: "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\Shell\\Bags\\1\\Desktop"
+      folder_path: "C:\\Users\\michael.chen\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup"
+      last_accessed: "2024-03-20T11:19:25Z"
+      description: "Shellbag showing Startup folder access"
+    
+    - key: "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\Shell\\Bags\\1\\Desktop"
+      folder_path: "C:\\Users\\michael.chen\\Documents"
+      last_accessed: "2024-03-20T11:30:10Z"
+      description: "Shellbag showing Documents folder access during encryption"
+  
+  recent_docs:
+    - key: "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\RecentDocs\\.pdf"
+      value_name: "0"
+      value_data: "Invoice_2024-03-20_ACME.pdf"
+      last_accessed: "2024-03-20T11:19:12Z"
+      description: "RecentDocs entry for PDF file"
+
+browser_artifacts:
+  edge_history:
+    database: "C:\\Users\\michael.chen\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\History"
+    entries:
+      - url: "https://invoice-delivery.com/invoice"
+        title: "Invoice Delivery - Payment Required"
+        visit_count: 1
+        typed_count: 0
+        last_visit_time: "2024-03-20T11:15:32Z"
+        visit_duration: 180
+        description: "Malicious website visit"
+      
+      - url: "https://invoice-delivery.com/download/Invoice_2024-03-20_ACME.pdf"
+        title: "Invoice Download"
+        visit_count: 1
+        typed_count: 0
+        last_visit_time: "2024-03-20T11:19:12Z"
+        visit_duration: 3
+        description: "PDF download from malicious site"
+  
+  edge_downloads:
+    database: "C:\\Users\\michael.chen\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\History"
+    entries:
+      - url: "https://invoice-delivery.com/download/Invoice_2024-03-20_ACME.pdf"
+        download_path: "C:\\Users\\michael.chen\\AppData\\Local\\Temp\\Invoice_2024-03-20_ACME.pdf"
+        started: "2024-03-20T11:19:12Z"
+        completed: "2024-03-20T11:19:12Z"
+        description: "PDF file downloaded from malicious website"
+
+srum_entries:
+  - timestamp: "2024-03-20T11:19:25Z"
+    application: "WindowsUpdateService.exe"
+    user: "michael.chen"
+    cpu_time: 5000
+    network_bytes_sent: 0
+    network_bytes_received: 512
+    network_connections: 1
+    description: "SRUM entry showing initial ransomware execution"
+  
+  - timestamp: "2024-03-20T11:20:00Z"
+    application: "WindowsUpdateService.exe"
+    user: "michael.chen"
+    cpu_time: 30000
+    network_bytes_sent: 0
+    network_bytes_received: 256
+    network_connections: 0
+    description: "SRUM entry during data staging phase"
+  
+  - timestamp: "2024-03-20T11:25:00Z"
+    application: "WindowsUpdateService.exe"
+    user: "michael.chen"
+    cpu_time: 10000
+    network_bytes_sent: 52428800
+    network_bytes_received: 512
+    network_connections: 1
+    description: "SRUM entry showing data exfiltration"
+  
+  - timestamp: "2024-03-20T11:30:00Z"
+    application: "WindowsUpdateService.exe"
+    user: "michael.chen"
+    cpu_time: 900000
+    network_bytes_sent: 0
+    network_bytes_received: 256
+    network_connections: 0
+    description: "SRUM entry during encryption phase (high CPU usage)"
+
+scheduled_task_xml:
+  - file_path: "C:\\Windows\\System32\\Tasks\\WindowsUpdateMaintenance"
+    created: "2024-03-20T11:20:20Z"
+    modified: "2024-03-20T11:20:20Z"
+    description: "Scheduled task XML file for persistence"
+
+recycle_bin:
+  - file_path: "$Recycle.Bin\\S-1-5-21-1234567890-1234567890-1234567890-1001\\$RABC123\\invoice_temp.vbs"
+    original_path: "C:\\Users\\michael.chen\\AppData\\Local\\Temp\\invoice_temp.vbs"
+    deleted: "2024-03-20T11:19:25Z"
+    description: "Deleted VBScript dropper in Recycle Bin"
+  
+  - file_path: "$Recycle.Bin\\S-1-5-21-1234567890-1234567890-1234567890-1001\\$RXYZ789\\collected_files.zip"
+    original_path: "C:\\Users\\michael.chen\\AppData\\Local\\Temp\\staging\\collected_files.zip"
+    deleted: "2024-03-20T11:30:00Z"
+    description: "Deleted staging archive in Recycle Bin"
+
+    On 2024-03-20 at 11:15:32 UTC, user michael.chen navigated to a malicious
+    website at https://invoice-delivery.com/invoice. The website appeared to be a
+    legitimate invoice delivery service.
+    
+    At 11:19:12 UTC, a weaponized PDF file (Invoice_2024-03-20_ACME.pdf) was
+    automatically downloaded to the TEMP folder and opened in Adobe Acrobat Reader
+    DC (version 23.003.20284).
+    
+    At 11:19:15 UTC, the PDF exploited CVE-2023-21608, a buffer overflow
+    vulnerability in Adobe Acrobat Reader DC. The exploit executed embedded
+    shellcode that dropped a VBScript file (invoice_temp.vbs) to the TEMP folder.
+    
+    At 11:19:16 UTC, the VBScript dropper was executed via wscript.exe. The dropper
+    extracted and decoded the main ransomware payload, writing it to the Startup
+    folder as WindowsUpdateService.exe.
+    
+    At 11:19:25 UTC, the ransomware payload was installed and executed. The dropper
+    then deleted itself. A configuration file (config.dat) was created with C2
+    settings and encryption parameters.
+    
+    At 11:20:00 UTC, the ransomware entered the data staging phase. It began
+    systematically scanning the file system for valuable files (documents, images,
+    databases, archives) and collecting them into a staging directory
+    (%TEMP%\\staging\\collected_files.zip). The ransomware prioritized files based
+    on extensions (.docx, .xlsx, .pdf, .jpg, .png, .db, .sql) and file size.
+    
+    At 11:24:45 UTC, the staging archive reached approximately 50 MB, containing
+    hundreds of files collected from Documents, Desktop, Pictures, and network shares.
+    
+    At 11:25:00 UTC, the ransomware initiated the data exfiltration phase. It
+    established an HTTPS connection to the C2 server and began uploading the
+    staging archive. The exfiltration used chunked transfer encoding to avoid
+    detection and included retry logic for failed transfers.
+    
+    At 11:29:30 UTC, the exfiltration completed successfully. The staging archive
+    was deleted from the local system to remove evidence of data theft.
+    
+    At 11:30:00 UTC, the ransomware entered the encryption phase. It began
+    encrypting files using AES-256 encryption with RSA-2048 public key encryption
+    of the AES keys. The ransomware used a hybrid cryptosystem where each file
+    received a unique AES key, which was then encrypted with the attacker's RSA
+    public key embedded in the malware. Files were encrypted in-place, with the
+    original file content replaced by encrypted data and the file extension changed
+    to .locked.
+    
+    The encryption process targeted:
+    - User documents (Documents, Desktop, Downloads folders)
+    - Images and media files
+    - Database files
+    - Archive files
+    - Network share files (if accessible)
+    
+    The ransomware skipped system files, executables in Program Files, and files
+    smaller than 1 KB to avoid breaking the operating system.
+    
+    At 11:45:00 UTC, after encryption completed, the ransomware created ransom note
+    files (README_DECRYPT.txt) in multiple locations:
+    - Desktop
+    - Root of each encrypted directory
+    - Network shares (if accessible)
+    
+    The ransom note contained instructions for payment, a unique victim ID, and a
+    Tor-based payment portal URL. The ransomware also modified the desktop
+    wallpaper to display the ransom message.
+    
+    At 11:20:20 UTC, the ransomware established persistence by:
+    1. Creating a Run key in the registry
+    2. Creating a Scheduled Task (WindowsUpdateMaintenance) to run every hour
+    3. Ensuring the executable remains in the Startup folder
+    
+    The ransomware continued running in the background, monitoring for new files
+    and maintaining persistence until the system was rebooted or the malware was
+    removed.
+
+  attack_method: |
+    This was a ransomware attack using a multi-phase approach:
+    
+    Initial Access:
+    - Drive-by download via malicious website
+    - Weaponized PDF exploiting CVE-2023-21608 (Adobe Acrobat Reader buffer overflow)
+    - VBScript dropper for payload delivery
+    - Ransomware payload installation to Startup folder
+    
+    Data Staging:
+    - Systematic file system scanning for valuable files
+    - File collection based on extension and size criteria
+    - Compression into staging archive (ZIP format)
+    - Staging directory created in TEMP folder
+    
+    Data Exfiltration:
+    - HTTPS connection to C2 server (45.146.164.110:443)
+    - Chunked transfer encoding for large file uploads
+    - Retry logic for failed transfers
+    - Staging archive deleted after successful exfiltration
+    
+    Encryption:
+    - Hybrid cryptosystem: AES-256 for file encryption, RSA-2048 for key encryption
+    - Unique AES key per file, encrypted with attacker's RSA public key
+    - In-place file encryption (original content overwritten)
+    - File extension changed to .locked
+    - Selective targeting (skips system files, small files)
+    
+    Persistence:
+    - Registry Run key
+    - Scheduled Task (hourly execution)
+    - Startup folder executable
+    - Background process monitoring
+
+  ransomware_details: |
+    The ransomware variant used in this attack implements a sophisticated
+    multi-phase operation:
+    
+    Encryption Algorithm:
+    - Symmetric encryption: AES-256 in CBC mode with random IV per file
+    - Asymmetric encryption: RSA-2048 for AES key encryption
+    - Key derivation: Each file receives a unique AES key generated using
+      CryptGenRandom() Windows API
+    - Key storage: Encrypted AES keys stored in file header or separate key file
+    
+    File Targeting:
+    - Extension-based targeting: .docx, .xlsx, .pdf, .jpg, .png, .db, .sql, etc.
+    - Size filtering: Files between 1 KB and 100 MB
+    - Directory exclusions: System directories, Program Files, Windows folder
+    - Network share access: Attempts to encrypt files on mapped network drives
+    
+    Anti-Forensics:
+    - Staging archive deletion after exfiltration
+    - Dropper self-deletion
+    - Minimal logging (only essential operations)
+    - Process injection techniques to evade detection
+    
+    Ransom Note:
+    - HTML-based ransom note with embedded styling
+    - Unique victim ID for payment tracking
+    - Tor-based payment portal (onion service)
+    - Bitcoin wallet address for payment
+    - Threat of data publication if ransom not paid
+
+  data_stolen: |
+    Based on staging archive analysis and network monitoring:
+    - Approximately 50 MB of data exfiltrated before encryption
+    - File types: Documents (.docx, .xlsx, .pdf), Images (.jpg, .png), Databases
+    - Estimated 500+ files collected during staging phase
+    - Data included: Project proposals, financial documents, customer databases,
+      internal communications, personal files
+
+  indicators_of_compromise:
+    - "Process execution chain: msedge.exe -> AcroRd32.exe -> wscript.exe -> WindowsUpdateService.exe"
+    - "Executable in Startup folder (not System32)"
+    - "Browser history showing visit to invoice-delivery.com"
+    - "PDF download from malicious website"
+    - "MFT entries showing .locked encrypted files"
+    - "Ransom note files (README_DECRYPT.txt) created"
+    - "USN Journal entries showing file encryption timeline"
+    - "Staging archive creation and deletion"
+    - "Registry Run key and Scheduled Task creation"
+    - "SRUM entries showing high CPU usage during encryption"
+    - "SRUM entries showing large outbound data transfer during exfiltration"
+    - "Prefetch files showing file access patterns during staging/encryption"
+    - "Recycle Bin containing deleted dropper and staging archive"
