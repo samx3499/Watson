@@ -10,7 +10,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.config import Config
 from src.scenarios import ATTACK_SCENARIOS, get_scenarios_by_difficulty
-from src.episode import EpisodeRunner
+
+# NOTE: EpisodeRunner removed - will be replaced with Agent-lightning Trainer
+# from src.episode import EpisodeRunner
 
 
 def main():
@@ -65,39 +67,19 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Run episodes
-    runner = EpisodeRunner()
-    all_results = []
+    # NOTE: This script needs to be updated to use Agent-lightning Trainer
+    # For now, it's disabled as EpisodeRunner has been removed
+    print("\n" + "=" * 60)
+    print("WARNING: This script needs to be updated for Agent-lightning")
+    print("EpisodeRunner has been removed. Use Agent-lightning Trainer instead.")
+    print("=" * 60)
+    sys.exit(1)
 
-    for scenario in scenarios:
-        print(f"\n{'=' * 60}")
-        print(f"Scenario: {scenario.name} ({scenario.id})")
-        print(f"Difficulty: {scenario.difficulty}")
-        print(f"{'=' * 60}")
-
-        for episode_num in range(args.episodes_per_scenario):
-            print(f"\nEpisode {episode_num + 1}/{args.episodes_per_scenario}")
-
-            try:
-                result = runner.run_episode(scenario)
-                all_results.append(result)
-
-                # Save individual episode
-                episode_file = output_dir / f"{scenario.id}_episode_{episode_num + 1}.json"
-                with open(episode_file, "w") as f:
-                    json.dump(result, f, indent=2)
-
-                # Print summary
-                reward = result["reward"]
-                print(f"  Tool calls made: {result['investigation']['tool_calls_made']}")
-                print(f"  Total reward: {reward.get('total_reward', 'N/A')}")
-                print(f"  Attack detection: {reward.get('attack_detection', 'N/A')}")
-
-            except Exception as e:
-                print(f"  Error in episode: {e}")
-                import traceback
-
-                traceback.print_exc()
+    # TODO: Rewrite using Agent-lightning Trainer
+    # Example:
+    # from agentlightning import Trainer
+    # trainer = Trainer(...)
+    # trainer.fit(agent, train_dataset=scenarios, ...)
 
     # Save summary
     summary_file = output_dir / "summary.json"

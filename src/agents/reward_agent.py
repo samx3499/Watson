@@ -1,34 +1,39 @@
-"""Reward calculation LLM for evaluating agent performance."""
+"""Reward Agent - Calculates rewards for agent performance."""
 
 from typing import Any, Dict, List
 
-from openai import OpenAI
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
 
 from src.config import Config
 from src.prompts.reward import get_reward_evaluation_prompt, get_reward_system_prompt
 from src.scenarios import AttackScenario
 
 
-class RewardLLM:
+class RewardAgent:
     """
     LLM that calculates rewards for agent performance.
     Evaluates how well the agent discovered the attack.
     """
 
     def __init__(self):
-        """Initialize the reward calculation LLM."""
-        # Use OpenRouter (OpenAI-compatible API)
-        self.client = OpenAI(
-            api_key=Config.OPENROUTER_API_KEY,
-            base_url=Config.OPENROUTER_BASE_URL,
-            default_headers={
-                "HTTP-Referer": "https://github.com/samx3499/watson",
-                "X-Title": "Watson Reward",
-            },
+        """Initialize the reward calculation agent."""
+        self.agent = Agent(
+            model=OpenAIChat(
+                id=Config.REWARD_MODEL,
+                api_key=Config.OPENROUTER_API_KEY,
+                base_url=Config.OPENROUTER_BASE_URL,
+            ),
+            instructions=get_reward_system_prompt(),
+            markdown=True,
+            temperature=0.3,
         )
 
     def calculate_reward(
-        self, scenario: AttackScenario, agent_investigation: Dict[str, Any], tool_calls_made: int
+        self,
+        scenario: AttackScenario,
+        agent_investigation: Dict[str, Any],
+        tool_calls_made: int,
     ) -> Dict[str, Any]:
         """
         Calculate reward for agent's investigation.
@@ -55,34 +60,32 @@ class RewardLLM:
             tool_calls_made=tool_calls_made,
         )
 
-        # Build request
-        request_params = {
-            "model": Config.REWARD_MODEL,
-            "messages": [
-                {"role": "system", "content": get_reward_system_prompt()},
-                {
-                    "role": "user",
-                    "content": prompt
-                    + "\n\nIMPORTANT: Respond with ONLY valid JSON, no other text.",
-                },
-            ],
-            "temperature": 0.3,
-        }
+        # Add JSON requirement
+        prompt += "\n\nIMPORTANT: Respond with ONLY valid JSON, no other text."
 
-        # Add JSON mode if supported
-        if "gemini" not in Config.REWARD_MODEL.lower():
-            request_params["response_format"] = {"type": "json_object"}
+        # Call agent
+        response = self.agent.run(prompt)
+        content = response.content if hasattr(response, "content") else str(response)
 
-        response = self.client.chat.completions.create(**request_params)
-
+        # Parse JSON response
         import json
 
-        reward_data = json.loads(response.choices[0].message.content)
+        try:
+            reward_data = json.loads(content)
+        except json.JSONDecodeError:
+            # Fallback if JSON parsing fails
+            reward_data = {
+                "attack_detection": 0,
+                "indicator_discovery": 0,
+                "query_quality": 0,
+                "efficiency": 0,
+                "thoroughness": 0,
+                "total_reward": 0,
+                "reasoning": "Failed to parse reward response",
+            }
 
         return {
             **reward_data,
-            "scenario_id": scenario.id,
-            "scenario_difficulty": scenario.difficulty,
             "tool_calls_made": tool_calls_made,
         }
 

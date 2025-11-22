@@ -1,15 +1,16 @@
-"""Environment LLM that simulates a database/log system."""
+"""Database Agent - Simulates a database/log system."""
 
 from typing import Dict, List, Optional
 
-from openai import OpenAI
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
 
 from src.config import Config
 from src.prompts.environment import get_environment_system_prompt
 from src.scenarios import AttackScenario
 
 
-class EnvironmentLLM:
+class DatabaseAgent:
     """
     Simulates a database/log system using an LLM.
     This LLM knows about attack scenarios and responds to queries accordingly.
@@ -17,26 +18,25 @@ class EnvironmentLLM:
 
     def __init__(self, scenario: AttackScenario):
         """
-        Initialize the environment with a specific attack scenario.
+        Initialize the database agent with a specific attack scenario.
 
         Args:
             scenario: The attack scenario that this environment knows about
         """
         self.scenario = scenario
-        # Use OpenRouter (OpenAI-compatible API)
-        self.client = OpenAI(
-            api_key=Config.OPENROUTER_API_KEY,
-            base_url=Config.OPENROUTER_BASE_URL,
-            default_headers={
-                "HTTP-Referer": "https://github.com/yourusername/watson",
-                "X-Title": "Watson Environment",
-            },
-        )
         self.conversation_history: List[Dict[str, str]] = []
 
-    def _build_system_prompt(self) -> str:
-        """Build the system prompt for the environment LLM."""
-        return get_environment_system_prompt(self.scenario.environment_knowledge)
+        # Create Agno agent
+        self.agent = Agent(
+            model=OpenAIChat(
+                id=Config.ENVIRONMENT_MODEL,
+                api_key=Config.OPENROUTER_API_KEY,
+                base_url=Config.OPENROUTER_BASE_URL,
+            ),
+            instructions=get_environment_system_prompt(self.scenario.environment_knowledge),
+            markdown=True,
+            temperature=0.3,  # Lower temperature for more consistent responses
+        )
 
     def query(self, query_text: str, context: Optional[List[Dict[str, str]]] = None) -> str:
         """
@@ -49,24 +49,21 @@ class EnvironmentLLM:
         Returns:
             Human-readable summary of query results
         """
-        # Build messages
-        messages = [{"role": "system", "content": self._build_system_prompt()}]
-
-        # Add context if provided
+        # Build prompt with context if provided
+        prompt = f"Query: {query_text}"
         if context:
-            messages.extend(context)
+            # Add context to prompt
+            context_str = "\n".join(
+                [
+                    f"{msg.get('role', 'unknown')}: {msg.get('content', '')}"
+                    for msg in context[-5:]  # Last 5 messages for context
+                ]
+            )
+            prompt = f"{context_str}\n\n{prompt}"
 
-        # Add current query
-        messages.append({"role": "user", "content": f"Query: {query_text}"})
-
-        # Call LLM
-        response = self.client.chat.completions.create(
-            model=Config.ENVIRONMENT_MODEL,
-            messages=messages,
-            temperature=0.3,  # Lower temperature for more consistent responses
-        )
-
-        result = response.choices[0].message.content
+        # Call agent
+        response = self.agent.run(prompt)
+        result = response.content if hasattr(response, "content") else str(response)
 
         # Update conversation history
         self.conversation_history.append({"role": "user", "content": query_text})
