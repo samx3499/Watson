@@ -3,6 +3,13 @@
 import os
 from typing import Any, Dict, List
 
+# CRITICAL: Delete VERL_MODEL_PATH from environment entirely
+# We use hardcoded model path to avoid path issues
+if "VERL_MODEL_PATH" in os.environ:
+    bad_path = os.environ.pop("VERL_MODEL_PATH")
+    print(f"[Init] Removed VERL_MODEL_PATH from environment: {bad_path}", flush=True)
+    print(f"[Init] Using hardcoded model instead", flush=True)
+
 import agentlightning as agl
 
 from src.scenarios import get_scenarios_by_difficulty
@@ -55,9 +62,13 @@ def prepare_dataset(scenarios: List) -> List[Dict[str, Any]]:
 
 def get_verl_config() -> Dict[str, Any]:
     """Get VERL configuration for training."""
+    # HARDCODED model path to avoid environment variable issues
+    model_path = "microsoft/Phi-3-mini-4k-instruct"
+    print(f"Using HARDCODED model path: {model_path}")
+    
     return {
         "model": {
-            "model_path": os.getenv("VERL_MODEL_PATH", "Qwen/Qwen2.5-Coder-1.5B-Instruct"),
+            "model_path": model_path,
             "trust_remote_code": True,
         },
         "env": {
