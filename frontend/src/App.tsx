@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { 
   Shield, 
   Terminal, 
@@ -273,6 +274,28 @@ export default function App() {
   const [simStep, setSimStep] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  const investigateMutation = useMutation<any, Error, string>({
+    mutationFn: async (prompt: string) => {
+      const res = await fetch('/api/investigate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt })
+      });
+      if (!res.ok) throw new Error(`Server responded ${res.status}`);
+      return res.json();
+    },
+    onMutate: (p: string) => {
+      setLogs(prev => [...prev, { id: `req-${Date.now()}`, type: 'system', content: `Sending prompt to backend: "${p}"`, timestamp: Date.now() }]);
+    },
+    onSuccess: (data: any) => {
+      setLogs(prev => [...prev, { id: `res-${Date.now()}`, type: 'system', content: `Backend response: ${typeof data === 'string' ? data : JSON.stringify(data)}`, timestamp: Date.now() }]);
+    },
+    onError: (err: Error | unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      setLogs(prev => [...prev, { id: `err-${Date.now()}`, type: 'system', content: `Backend error: ${message}`, timestamp: Date.now() }]);
+    }
+  });
+
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -314,6 +337,20 @@ export default function App() {
     await new Promise(resolve => setTimeout(resolve, 1000));
     setLogs(prev => [...prev, { id: 'end', type: 'system', content: 'Investigation Complete. Incident Report Generated.', timestamp: Date.now() }]);
     setIsSimulating(false);
+  };
+
+  const handleExecute = async () => {
+    if (!prompt) return;
+
+    try {
+      // send prompt to backend first (fire-and-wait)
+      await investigateMutation.mutateAsync(prompt);
+    } catch (e) {
+      // error logged via onError
+    }
+
+    // then run local simulation (keeps previous behavior)
+    runSimulation();
   };
 
   return (
@@ -376,12 +413,12 @@ export default function App() {
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-4 pr-32 py-3 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-slate-100 placeholder-slate-600"
               />
               <button 
-                onClick={runSimulation}
-                disabled={isSimulating || !prompt}
+                onClick={handleExecute}
+                disabled={isSimulating || !prompt || investigateMutation.status === 'pending'}
                 className="absolute right-1.5 top-1.5 bottom-1.5 px-4 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
               >
-                {isSimulating ? <Activity className="animate-spin" size={14} /> : <Play size={14} />}
-                {isSimulating ? 'Running' : 'Execute'}
+                {investigateMutation.status === 'pending' ? <Activity className="animate-spin" size={14} /> : isSimulating ? <Activity className="animate-spin" size={14} /> : <Play size={14} />}
+                {investigateMutation.status === 'pending' ? 'Sending' : isSimulating ? 'Running' : 'Execute'}
               </button>
             </div>
             <p className="mt-2 text-[10px] text-slate-500 flex items-center gap-1">
