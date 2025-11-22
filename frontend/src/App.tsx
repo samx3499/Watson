@@ -18,6 +18,7 @@ import {
   Layout,
   Cpu
 } from 'lucide-react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 
 // --- Types & Interfaces ---
 
@@ -168,6 +169,8 @@ export default function App() {
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [rewardPoints, setRewardPoints] = useState<Array<{ x: number; y: number }>>([]);
   const [artifacts, setArtifacts] = useState<Array<{ id?: string; time?: number; type?: string; description?: string; value?: string; impact?: string; confidence?: number | string; source?: string; step?: number }>>([]);
+  const [findings, setFindings] = useState<Array<any>>([]);
+  const [findingsOpen, setFindingsOpen] = useState<boolean>(true);
 
   const investigateMutation = useMutation<any, Error, string>({
     mutationFn: async (prompt: string) => {
@@ -301,26 +304,39 @@ export default function App() {
 
             if (ev.type === 'final_report') {
               setLogs(prev => [...prev, { id: `report-${Date.now()}`, type: 'system', content: 'Final report received', timestamp: Date.now() }]);
-              // merge findings into artifacts table if present
-              if (ev.report && Array.isArray(ev.report.findings)) {
-                setArtifacts(prev => {
-                  const existingIds = new Set(prev.filter(p => p.id).map(p => p.id));
-                  const additions = ev.report.findings
-                    .filter((f: any) => !f.id || !existingIds.has(f.id))
-                    .map((f: any) => ({
-                      id: f.id,
-                      time: f.time || Date.now(),
-                      type: f.type || 'Finding',
-                      description: f.description || f.value || f.description || JSON.stringify(f),
-                      value: f.value || f.description || JSON.stringify(f),
-                      impact: f.impact || '',
-                      confidence: f.confidence ?? '',
-                      source: f.source ?? '',
-                      step: f.step ?? ''
-                    }));
-                  return [...prev, ...additions];
-                });
-              }
+              // Fetch the authoritative final report from the backend and display findings below the Execution Log
+              (async () => {
+                try {
+                  if (!investigationId) return;
+                  const r = await fetch(`/api/report/${investigationId}`);
+                  if (!r.ok) throw new Error(`Report fetch failed: ${r.status}`);
+                  const json = await r.json();
+                  const remoteFindings = json.report?.findings || [];
+                  setFindings(remoteFindings);
+                  // also merge into artifacts table for right panel view
+                  if (Array.isArray(remoteFindings) && remoteFindings.length > 0) {
+                    setArtifacts(prev => {
+                      const existingIds = new Set(prev.filter(p => p.id).map(p => p.id));
+                      const additions = remoteFindings
+                        .filter((f: any) => !f.id || !existingIds.has(f.id))
+                        .map((f: any) => ({
+                          id: f.id,
+                          time: f.time || Date.now(),
+                          type: f.type || 'Finding',
+                          description: f.description || f.value || f.description || JSON.stringify(f),
+                          value: f.value || f.description || JSON.stringify(f),
+                          impact: f.impact || '',
+                          confidence: f.confidence ?? '',
+                          source: f.source ?? '',
+                          step: f.step ?? ''
+                        }));
+                      return [...prev, ...additions];
+                    });
+                  }
+                } catch (err) {
+                  setLogs(prev => [...prev, { id: `err-report-${Date.now()}`, type: 'system', content: `Failed to fetch final report: ${String(err)}`, timestamp: Date.now() }]);
+                }
+              })();
             }
             if (ev.type === 'stream_closed') {
               // stream end signal
@@ -459,6 +475,32 @@ export default function App() {
                  </div>
                )}
             </div>
+            {/* Findings collapsible panel (appears under the execution log) */}
+            {findings && findings.length > 0 && (
+              <div className="border-t border-slate-800 bg-slate-900/20 p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setFindingsOpen(o => !o)} className="p-1 rounded hover:bg-slate-800/40">
+                      {findingsOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                    </button>
+                    <h4 className="text-sm font-bold">Findings</h4>
+                    <span className="text-xs text-slate-500">{findings.length} found</span>
+                  </div>
+                  <div className="text-xs text-slate-400">Final report</div>
+                </div>
+                {findingsOpen && (
+                  <div className="space-y-2 max-h-40 overflow-y-auto">
+                    {findings.map((f: any, i: number) => (
+                      <div key={f.id ?? i} className="p-2 bg-slate-900/60 rounded">
+                        <div className="text-xs text-slate-400 font-mono">{f.id ?? `F-${i+1}`} • {f.source ?? ''} • step: {f.step ?? '-'}</div>
+                        <div className="mt-1 text-sm text-slate-200">{f.description ?? f.value ?? JSON.stringify(f)}</div>
+                        <div className="text-xs text-slate-400 mt-1">Impact: {f.impact ?? 'N/A'} • Confidence: {f.confidence ?? 'N/A'}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
