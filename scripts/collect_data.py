@@ -1,4 +1,5 @@
 """Script to collect training data by running episodes."""
+
 import argparse
 import json
 import sys
@@ -38,9 +39,9 @@ def main():
         default="data/episodes",
         help="Directory to save episode results (default: data/episodes)",
     )
-    
+
     args = parser.parse_args()
-    
+
     # Validate config
     try:
         Config.validate()
@@ -48,70 +49,74 @@ def main():
         print(f"Configuration error: {e}")
         print("Please set OPENAI_API_KEY and OPENPIPE_API_KEY in your environment or .env file")
         sys.exit(1)
-    
+
     # Select scenarios
     if args.scenarios:
         scenarios = [s for s in ATTACK_SCENARIOS if s.id in args.scenarios]
         if len(scenarios) != len(args.scenarios):
-            print(f"Warning: Some scenario IDs not found")
+            print("Warning: Some scenario IDs not found")
     else:
         scenarios = get_scenarios_by_difficulty(args.max_difficulty)
-    
+
     print(f"Running {len(scenarios)} scenario(s) with {args.episodes_per_scenario} episode(s) each")
     print(f"Total episodes: {len(scenarios) * args.episodes_per_scenario}")
-    
+
     # Create output directory
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Run episodes
     runner = EpisodeRunner()
     all_results = []
-    
+
     for scenario in scenarios:
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"Scenario: {scenario.name} ({scenario.id})")
         print(f"Difficulty: {scenario.difficulty}")
-        print(f"{'='*60}")
-        
+        print(f"{'=' * 60}")
+
         for episode_num in range(args.episodes_per_scenario):
             print(f"\nEpisode {episode_num + 1}/{args.episodes_per_scenario}")
-            
+
             try:
                 result = runner.run_episode(scenario)
                 all_results.append(result)
-                
+
                 # Save individual episode
                 episode_file = output_dir / f"{scenario.id}_episode_{episode_num + 1}.json"
                 with open(episode_file, "w") as f:
                     json.dump(result, f, indent=2)
-                
+
                 # Print summary
                 reward = result["reward"]
                 print(f"  Tool calls made: {result['investigation']['tool_calls_made']}")
                 print(f"  Total reward: {reward.get('total_reward', 'N/A')}")
                 print(f"  Attack detection: {reward.get('attack_detection', 'N/A')}")
-                
+
             except Exception as e:
                 print(f"  Error in episode: {e}")
                 import traceback
+
                 traceback.print_exc()
-    
+
     # Save summary
     summary_file = output_dir / "summary.json"
     with open(summary_file, "w") as f:
-        json.dump({
-            "total_episodes": len(all_results),
-            "scenarios_run": [s.id for s in scenarios],
-            "results": all_results
-        }, f, indent=2)
-    
-    print(f"\n{'='*60}")
+        json.dump(
+            {
+                "total_episodes": len(all_results),
+                "scenarios_run": [s.id for s in scenarios],
+                "results": all_results,
+            },
+            f,
+            indent=2,
+        )
+
+    print(f"\n{'=' * 60}")
     print(f"Completed {len(all_results)} episodes")
     print(f"Results saved to {output_dir}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
 
 if __name__ == "__main__":
     main()
-

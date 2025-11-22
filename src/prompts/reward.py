@@ -7,11 +7,11 @@ def get_reward_evaluation_prompt(
     scenario_description: str,
     expected_indicators: list,
     conversation_summary: str,
-    tool_calls_made: int
+    tool_calls_made: int,
 ) -> str:
     """Get the reward evaluation prompt."""
     indicators_text = "\n".join(f"- {indicator}" for indicator in expected_indicators)
-    
+
     return f"""You are evaluating a security analyst's investigation of a potential security incident.
 
 ATTACK SCENARIO:

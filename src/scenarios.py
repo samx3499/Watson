@@ -1,11 +1,13 @@
 """Attack scenario definitions for Watson training."""
-from typing import Dict, List, Any
+
 from dataclasses import dataclass
+from typing import List
 
 
 @dataclass
 class AttackScenario:
     """Represents an attack scenario for training."""
+
     id: str
     name: str
     description: str
@@ -38,9 +40,9 @@ ATTACK_SCENARIOS: List[AttackScenario] = [
         expected_indicators=[
             "Access outside normal hours",
             "Access to unauthorized resources",
-            "Multiple sensitive database accesses in short time window"
+            "Multiple sensitive database accesses in short time window",
         ],
-        difficulty=3
+        difficulty=3,
     ),
     AttackScenario(
         id="phishing-001",
@@ -63,9 +65,9 @@ ATTACK_SCENARIOS: List[AttackScenario] = [
             "Multiple credential entries on phishing site",
             "Failed login spike",
             "Logins from new IP addresses",
-            "Geographic anomalies"
+            "Geographic anomalies",
         ],
-        difficulty=5
+        difficulty=5,
     ),
     AttackScenario(
         id="ransomware-001",
@@ -89,9 +91,9 @@ ATTACK_SCENARIOS: List[AttackScenario] = [
             "Network share access",
             "Ransom note creation",
             "C2 server communication",
-            "AV suppression"
+            "AV suppression",
         ],
-        difficulty=7
+        difficulty=7,
     ),
     AttackScenario(
         id="data-exfil-001",
@@ -114,9 +116,9 @@ ATTACK_SCENARIOS: List[AttackScenario] = [
             "Data compression",
             "Outbound transfer to unknown IP",
             "Anomalous user behavior",
-            "Transfer during unusual time"
+            "Transfer during unusual time",
         ],
-        difficulty=6
+        difficulty=6,
     ),
     AttackScenario(
         id="privilege-escalation-001",
@@ -140,9 +142,9 @@ ATTACK_SCENARIOS: List[AttackScenario] = [
             "Admin panel access",
             "Permission modifications",
             "New admin account creation",
-            "IP address anomaly"
+            "IP address anomaly",
         ],
-        difficulty=8
+        difficulty=8,
     ),
     AttackScenario(
         id="lateral-movement-001",
@@ -167,9 +169,9 @@ ATTACK_SCENARIOS: List[AttackScenario] = [
             "WMI enumeration",
             "Remote service creation",
             "Progressive movement toward sensitive systems",
-            "Rapid lateral movement"
+            "Rapid lateral movement",
         ],
-        difficulty=9
+        difficulty=9,
     ),
 ]
 
@@ -185,4 +187,3 @@ def get_scenario_by_id(scenario_id: str) -> AttackScenario:
 def get_scenarios_by_difficulty(max_difficulty: int) -> List[AttackScenario]:
     """Get all scenarios with difficulty <= max_difficulty."""
     return [s for s in ATTACK_SCENARIOS if s.difficulty <= max_difficulty]
-

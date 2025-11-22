@@ -10,7 +10,7 @@ app = Flask(__name__)
 BASE_URL = "https://www.virustotal.com/api/v3"
 # ---- NEW CODE: allow CLI argument key=xxxxx ----
 VT_API_KEY = os.getenv("VT_API_KEY")  # default from env
- 
+
 # Parse CLI args like: python app.py key=xxxxx
 for arg in sys.argv[1:]:
     if arg.startswith("key="):
@@ -22,13 +22,12 @@ for arg in sys.argv[1:]:
 # old code to remove: VT_API_KEY = os.getenv("VT_API_KEY")
 
 
-
-
 def get_headers():
     if not VT_API_KEY:
         # You could also return a 500 in endpoints instead of raising.
         raise RuntimeError("VT_API_KEY environment variable is not set.")
     return {"x-apikey": VT_API_KEY}
+
 
 def url_to_vt_id(url: str) -> str:
     """
@@ -62,7 +61,9 @@ def check_file_hash(file_hash):
     try:
         data = resp.json()
     except Exception:
-        return jsonify({"error": "Non-JSON response from VirusTotal", "raw": resp.text}), resp.status_code
+        return jsonify(
+            {"error": "Non-JSON response from VirusTotal", "raw": resp.text}
+        ), resp.status_code
 
     return jsonify(data), resp.status_code
 
@@ -177,6 +178,7 @@ def url_report():
         ), resp.status_code
 
     return jsonify(data), resp.status_code
+
 
 if __name__ == "__main__":
     # host=0.0.0.0 is important so Codespaces can expose the port

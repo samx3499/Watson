@@ -1,4 +1,5 @@
 """Color utilities for terminal output."""
+
 from colorama import Fore, Style, init
 
 # Initialize colorama for cross-platform support
@@ -7,6 +8,7 @@ init(autoreset=True)
 
 class Colors:
     """Color constants for terminal output."""
+
     # Agent queries
     QUERY = Fore.CYAN
     # Database responses
@@ -27,4 +29,3 @@ class Colors:
 def colorize(text: str, color: str) -> str:
     """Apply color to text."""
     return f"{color}{text}{Style.RESET_ALL}"
-

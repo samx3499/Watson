@@ -70,4 +70,3 @@ def get_agent_continue_prompt() -> str:
 def get_agent_first_turn_prompt() -> str:
     """Get prompt for first turn."""
     return "You need to use the query_logs tool to investigate. What query would you like to run?"
-
