@@ -52,14 +52,10 @@ interface Scenario {
 
 // --- Components ---
 
-const TopologyMap: React.FC<{ hosts: Host[]; activeStep: number }> = ({ hosts, activeStep }) => {
-  // Determine host status based on simulation step for visual feedback
-  const getStatus = (host: Host) => {
-    if (activeStep > 3 && host.id === 'gw') return 'compromised';
-    if (activeStep > 8 && host.id === 'db') return 'compromised';
-    if (activeStep > 8 && host.id === 'ad') return 'suspicious';
-    return 'safe';
-  };
+const TopologyMap: React.FC<{ hosts: Host[] }> = ({ hosts }) => {
+  // Host status is now driven by backend `host_status` events stored in `hosts`.
+  const getStatus = (host: Host) => host.status || 'safe';
+  const anyCompromised = hosts.some(h => h.status === 'compromised');
 
   return (
     <div className="relative h-full w-full bg-slate-900/30 rounded-lg overflow-hidden">
@@ -70,18 +66,17 @@ const TopologyMap: React.FC<{ hosts: Host[]; activeStep: number }> = ({ hosts, a
 
       <svg className="absolute inset-0 w-full h-full pointer-events-none">
         {/* Dynamic Edges */}
-        <line x1="50" y1="150" x2="200" y2="100" stroke="#334155" strokeWidth="1" />
-        <line x1="50" y1="150" x2="200" y2="200" stroke="#334155" strokeWidth="1" />
+        <line x1="50" y1="100" x2="200" y2="50" stroke="#334155" strokeWidth="1" />
+        <line x1="50" y1="100" x2="200" y2="150" stroke="#334155" strokeWidth="1" />
         
-        {/* Attack Path Highlight */}
-        {activeStep > 3 && (
-          <line x1="50" y1="150" x2="350" y2="150" stroke="#ef4444" strokeWidth="2" strokeDasharray="5,5" className="animate-pulse" />
-        )}
-         {activeStep <= 3 && (
-          <line x1="50" y1="150" x2="350" y2="150" stroke="#334155" strokeWidth="1" />
+        {/* Attack Path Highlight (driven by host status) */}
+        {anyCompromised ? (
+          <line x1="50" y1="100" x2="350" y2="100" stroke="#ef4444" strokeWidth="2" strokeDasharray="5,5" className="animate-pulse" />
+        ) : (
+          <line x1="50" y1="100" x2="350" y2="100" stroke="#334155" strokeWidth="1" />
         )}
 
-        <line x1="350" y1="150" x2="500" y2="150" stroke="#334155" strokeWidth="1" />
+        <line x1="350" y1="100" x2="500" y2="100" stroke="#334155" strokeWidth="1" />
       </svg>
 
       {hosts.map(host => {
@@ -278,6 +273,20 @@ export default function App() {
             // artifact events emitted by backend
             if (ev.type === 'artifact' && ev.artifact) {
               setArtifacts(prev => [...prev, ev.artifact]);
+            }
+
+            // host status updates emitted by backend
+            if (ev.type === 'host_status') {
+              const hostId = ev.host_id as string | undefined;
+              const hostName = ev.host_name as string | undefined;
+              const status = ev.status as 'compromised' | 'suspicious' | 'safe' | string;
+              if (status) {
+                setHosts(prev => prev.map(h => {
+                  if (hostId && h.id === hostId) return { ...h, status: status as any };
+                  if (!hostId && hostName && h.name && hostName.includes(h.name)) return { ...h, status: status as any };
+                  return h;
+                }));
+              }
             }
 
             const entry: LogEntry = {
@@ -502,7 +511,7 @@ export default function App() {
             </div>
             
             <div className="flex-1 border border-slate-800 rounded-lg bg-slate-950 relative shadow-inner">
-               <TopologyMap hosts={hosts} activeStep={simStep} />
+               <TopologyMap hosts={hosts} />
             </div>
           </div>
 

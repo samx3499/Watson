@@ -36,11 +36,11 @@ SCENARIOS = [
 ]
 
 INITIAL_HOSTS = [
-    {"id": "gw", "name": "Gateway-01", "type": "firewall", "status": "safe", "x": 50, "y": 150},
-    {"id": "web", "name": "Web-FE-02", "type": "server", "status": "safe", "x": 200, "y": 100},
-    {"id": "app", "name": "App-Svc-04", "type": "server", "status": "safe", "x": 200, "y": 200},
-    {"id": "db", "name": "DB-PROD-01", "type": "database", "status": "safe", "x": 350, "y": 150},
-    {"id": "ad", "name": "AD-Core", "type": "server", "status": "safe", "x": 500, "y": 150},
+    {"id": "gw", "name": "Gateway-01", "type": "firewall", "status": "safe", "x": 50, "y": 100},
+    {"id": "web", "name": "Web-FE-02", "type": "server", "status": "safe", "x": 200, "y": 50},
+    {"id": "app", "name": "App-Svc-04", "type": "server", "status": "safe", "x": 200, "y": 150},
+    {"id": "db", "name": "DB-PROD-01", "type": "database", "status": "safe", "x": 350, "y": 100},
+    {"id": "ad", "name": "AD-Core", "type": "server", "status": "safe", "x": 500, "y": 100},
 ]
 
 SIMULATION_SEQUENCE = [
@@ -133,6 +133,25 @@ async def _run_investigation_task(investigation_id: str, prompt: str, max_steps:
                 ev = {"type": "artifact", "artifact": artifact, "timestamp": int(asyncio.get_event_loop().time() * 1000)}
                 await q.put(ev)
                 event_log.append(ev)
+                # emit host status update if we can map the artifact source to a known host
+                host_id = None
+                host_name = artifact.get("source")
+                for h in INITIAL_HOSTS:
+                    if h.get("name") and host_name and h.get("name") in str(host_name):
+                        host_id = h.get("id")
+                        break
+
+                status = "suspicious"
+                if artifact.get("impact") in ("Critical", "High"):
+                    status = "compromised"
+                elif artifact.get("impact") == "Medium":
+                    status = "suspicious"
+                else:
+                    status = "safe"
+
+                host_ev = {"type": "host_status", "host_id": host_id, "host_name": host_name, "status": status, "timestamp": int(asyncio.get_event_loop().time() * 1000)}
+                await q.put(host_ev)
+                event_log.append(host_ev)
                 # skip emitting the generic event for artifact items
                 continue
 
