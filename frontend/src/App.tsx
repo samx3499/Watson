@@ -1,17 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useMutation } from '@tanstack/react-query';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { 
   Shield, 
   Terminal, 
   Activity, 
-  AlertTriangle, 
   Server, 
   Globe, 
-  CheckCircle, 
-  Clock, 
-  ChevronRight, 
   Database,
-  Share2,
   Map as MapIcon,
   Zap,
   Brain,
@@ -161,6 +157,8 @@ const LogItem: React.FC<{ entry: LogEntry }> = ({ entry }) => {
   );
 };
 
+// Reward chart uses Recharts for nicer visualization
+
 export default function App() {
   const [logs, setLogs] = useState<LogEntry[]>([
     { id: 'init', type: 'system', content: 'Environment Initialized. Waiting for Agent input...', timestamp: Date.now() }
@@ -173,6 +171,7 @@ export default function App() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [hosts, setHosts] = useState<Host[]>([]);
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
+  const [rewardPoints, setRewardPoints] = useState<Array<{ x: number; y: number }>>([]);
 
   const investigateMutation = useMutation<any, Error, string>({
     mutationFn: async (prompt: string) => {
@@ -226,6 +225,7 @@ export default function App() {
     setIsSimulating(true);
     setSimStep(0);
     setCumulativeReward(0);
+    setRewardPoints([]);
 
     let investigationId: string | undefined;
     try {
@@ -268,7 +268,11 @@ export default function App() {
             setSimStep(stepCounter);
 
             if (type === 'reward' && ev.rewardValue) {
-              setCumulativeReward(prev => prev + Number(ev.rewardValue));
+              setCumulativeReward(prev => {
+                const newCum = ev.cumulativeReward !== undefined ? Number(ev.cumulativeReward) : prev + Number(ev.rewardValue);
+                setRewardPoints(rp => [...rp, { x: stepCounter, y: newCum }]);
+                return newCum;
+              });
             }
 
             const entry: LogEntry = {
@@ -305,6 +309,13 @@ export default function App() {
             rewardValue: ev.rewardValue,
             timestamp: ev.timestamp || Date.now()
           };
+          if (type === 'reward' && ev.rewardValue) {
+            setCumulativeReward(prev => {
+              const newCum = ev.cumulativeReward !== undefined ? Number(ev.cumulativeReward) : prev + Number(ev.rewardValue);
+              setRewardPoints(rp => [...rp, { x: simStep || 1, y: newCum }]);
+              return newCum;
+            });
+          }
           setLogs(prev => [...prev, entry]);
         } catch (e) {}
       }
@@ -440,6 +451,19 @@ export default function App() {
           </div>
 
           {/* Topology View */}
+          <div className="border-b border-slate-800 bg-slate-900/30 p-3">
+            <div style={{ width: '100%', height: 110 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={rewardPoints.map(p => ({ step: p.x, reward: p.y }))}>
+                  <CartesianGrid stroke="#1f2937" strokeDasharray="3 3" />
+                  <XAxis dataKey="step" stroke="#94a3b8" />
+                  <YAxis stroke="#f59e0b" />
+                  <Tooltip formatter={(value: any) => [value, 'Reward']} />
+                  <Line type="monotone" dataKey="reward" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
           <div className="flex-1 p-6 flex flex-col min-h-0">
             <div className="flex items-center justify-between mb-4">
                <h3 className="text-sm font-bold text-slate-300 flex items-center gap-2">

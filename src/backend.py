@@ -44,21 +44,33 @@ INITIAL_HOSTS = [
 ]
 
 SIMULATION_SEQUENCE = [
-    {"type": "thought", "content": "I need to investigate the initial alert regarding suspicious traffic from external IP 45.13.12.99.", "delay": 500},
-    {"type": "action", "content": "Search for all successful inbound connections from 45.13.12.99 in the last 4 hours.", "metadata": "Tool: Natural Language Query", "delay": 1200},
-    {"type": "translation", "content": "index=firewall src_ip=\"45.13.12.99\" action=\"allowed\" | stats count by dest_ip", "metadata": "Sim2Real: SQL/SPL Translator", "delay": 800},
-    {"type": "observation", "content": "Found 12 successful connections to Gateway-01 (192.168.1.5) on port 22 (SSH).", "delay": 1000},
-    {"type": "reward", "content": "Initial Access Point Identified", "rewardValue": 15, "delay": 500},
-    {"type": "thought", "content": "The attacker has SSH access to Gateway-01. I must check for lateral movement from that host.", "delay": 1500},
-    {"type": "action", "content": "Show me outbound connections from Gateway-01 to internal database ports.", "metadata": "Tool: Natural Language Query", "delay": 1200},
-    {"type": "translation", "content": "index=vpc_flow src_ip=\"192.168.1.5\" dest_port IN (1433, 5432, 3306) | table _time, dest_ip, bytes", "metadata": "Sim2Real: SQL/SPL Translator", "delay": 1000},
-    {"type": "observation", "content": "Connection detected: Gateway-01 -> DB-PROD-01 (Port 1433) at 02:22:10. Bytes: 2.5GB", "delay": 1200},
-    {"type": "reward", "content": "Lateral Movement & Data Staging Detected", "rewardValue": 35, "delay": 500},
-    {"type": "thought", "content": "High data transfer suggests exfiltration. I need to verify user context on the Database server.", "delay": 1500},
-    {"type": "action", "content": "List active sessions on DB-PROD-01 during the transfer window.", "metadata": "Tool: Natural Language Query", "delay": 1200},
-    {"type": "translation", "content": "index=wineventlog host=\"DB-PROD-01\" EventCode=4624 | bucket _time span=5m | stats count by User", "metadata": "Sim2Real: SQL/SPL Translator", "delay": 800},
-    {"type": "observation", "content": "User \"svc_backup\" active. This account typically operates at 03:00, not 02:22.", "delay": 1000},
-    {"type": "reward", "content": "Anomaly Confirmed: Credential Misuse", "rewardValue": 50, "delay": 500},
+    {"type": "thought", "content": "I need to investigate the initial alert regarding suspicious traffic from external IP 45.13.12.99.", "delay": 300},
+    {"type": "action", "content": "Search for inbound connections from 45.13.12.99.", "metadata": "Tool: Natural Language Query", "delay": 400},
+    {"type": "translation", "content": "index=firewall src_ip=\"45.13.12.99\" action=\"allowed\" | stats count by dest_ip", "metadata": "Sim2Real: SQL/SPL Translator", "delay": 300},
+    {"type": "observation", "content": "Found connections to Gateway-01 on port 22 (SSH).", "delay": 300},
+    {"type": "reward", "content": "Initial Access Point Identified", "rewardValue": 5, "delay": 200},
+
+    {"type": "thought", "content": "Check for unusual outbound connections from Gateway-01.", "delay": 400},
+    {"type": "action", "content": "Query VPC flow logs for Gateway-01.", "metadata": "Tool: Natural Language Query", "delay": 300},
+    {"type": "translation", "content": "index=vpc_flow src_ip=\"192.168.1.5\" dest_port IN (1433, 5432, 3306)", "metadata": "Sim2Real: SQL/SPL Translator", "delay": 300},
+    {"type": "observation", "content": "Connection detected: Gateway-01 -> DB-PROD-01 (Port 1433). Bytes: 1.2GB", "delay": 300},
+    {"type": "reward", "content": "Suspicious outbound flow detected", "rewardValue": 10, "delay": 200},
+
+    {"type": "action", "content": "Inspect DB sessions during the transfer window.", "metadata": "Tool: Natural Language Query", "delay": 300},
+    {"type": "translation", "content": "index=wineventlog host=\"DB-PROD-01\" EventCode=4624 | stats count by User", "metadata": "Sim2Real: SQL/SPL Translator", "delay": 300},
+    {"type": "observation", "content": "User \"svc_backup\" active during anomalous transfer.", "delay": 300},
+    {"type": "reward", "content": "Credential misuse suspected", "rewardValue": 8, "delay": 200},
+
+    {"type": "thought", "content": "Search for data staging artifacts.", "delay": 300},
+    {"type": "action", "content": "List large file reads on DB-PROD-01.", "metadata": "Tool: Natural Language Query", "delay": 300},
+    {"type": "observation", "content": "Large read: /var/backups/backup.tar (2.0GB)", "delay": 300},
+    {"type": "reward", "content": "Data staging confirmed", "rewardValue": 12, "delay": 200},
+
+    {"type": "action", "content": "Check external transfer destinations.", "metadata": "Tool: Natural Language Query", "delay": 300},
+    {"type": "observation", "content": "External upload to 203.0.113.22 observed", "delay": 300},
+    {"type": "reward", "content": "Exfiltration detected", "rewardValue": 20, "delay": 200},
+
+    {"type": "thought", "content": "Assemble final findings and confidence scores.", "delay": 300},
 ]
 
 # Expose environment metadata
@@ -79,6 +91,7 @@ async def _run_investigation_task(investigation_id: str, prompt: str, max_steps:
 
         # Walk the pre-defined SIMULATION_SEQUENCE and emit matching event types
         step_count = 0
+        cumulative_reward = 0.0
         for item in SIMULATION_SEQUENCE:
             # respect configured max_steps
             if step_count >= max_steps:
@@ -90,7 +103,11 @@ async def _run_investigation_task(investigation_id: str, prompt: str, max_steps:
             if item.get("metadata") is not None:
                 event["metadata"] = item.get("metadata")
             if item.get("rewardValue") is not None:
-                event["rewardValue"] = item.get("rewardValue")
+                # attach reward and cumulative reward values
+                rv = float(item.get("rewardValue"))
+                cumulative_reward += rv
+                event["rewardValue"] = rv
+                event["cumulativeReward"] = cumulative_reward
 
             # Emit the event
             await q.put(event)
@@ -135,8 +152,8 @@ async def start_investigation(req: PromptRequest, background_tasks: BackgroundTa
         "status": "running",
         "report": None,
     }
-    # Kick off background task
-    background_tasks.add_task(_run_investigation_task, investigation_id, req.prompt, req.max_steps or 8)
+    # Kick off background task (default to larger step cap for richer simulations)
+    background_tasks.add_task(_run_investigation_task, investigation_id, req.prompt, req.max_steps or 50)
     return {"investigation_id": investigation_id, "status": "started"}
 
 
