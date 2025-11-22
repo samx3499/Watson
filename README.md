@@ -30,7 +30,15 @@ This project trains a Large Language Model (LLM) to use **100s of tool calls** t
 
 1. **Clone the repository** (if applicable) or navigate to the project directory
 
-2. **Install dependencies**:
+2. **Install dependencies using uv**:
+   ```bash
+   # Install uv if you haven't already: https://github.com/astral-sh/uv
+   uv sync
+   ```
+   
+   This will install all dependencies and create a `uv.lock` file for reproducible builds.
+   
+   Alternatively, you can use pip:
    ```bash
    pip install -r requirements.txt
    ```

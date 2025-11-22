@@ -89,7 +89,12 @@ This bidirectional translation ensures the agent's training transfers seamlessly
 
 ## Technical Stack
 
-*To be determined based on implementation choices*
+### Package Management
+- **uv**: Fast Python package installer and resolver (https://github.com/astral-sh/uv)
+  - Project uses `pyproject.toml` for dependency management
+  - Run `uv sync` to install dependencies and create `uv.lock` file
+  - Faster than pip and provides reproducible builds
+  - The `uv.lock` file should be committed to version control for reproducibility
 
 ### Potential Components
 - **RL Framework**: PPO, DQN, or custom RL algorithm
@@ -97,6 +102,7 @@ This bidirectional translation ensures the agent's training transfers seamlessly
 - **Tool Call Framework**: LangChain, AutoGPT, or custom implementation
 - **Translation Layer**: Query parser and result summarizer
 - **Evaluation**: Reward model LLM for training signal
+- **Data Collection**: OpenPipe SDK for logging and fine-tuning
 
 ## Related Work
 
@@ -115,21 +121,21 @@ This bidirectional translation ensures the agent's training transfers seamlessly
 ## Implementation Phases
 
 ### Phase 1: Environment Simulation
-- [ ] Design attack scenario format
-- [ ] Implement environment LLM (simulated DB)
-- [ ] Create initial set of attack scenarios (10-20)
-- [ ] Test environment responses
+- [x] Design attack scenario format
+- [x] Implement environment LLM (simulated DB)
+- [x] Create initial set of attack scenarios (6 scenarios implemented, target: 10-20)
+- [x] Test environment responses
 
 ### Phase 2: Agent Development
-- [ ] Set up agent LLM with tool call capability
-- [ ] Implement query generation logic
-- [ ] Design context management for multi-hop queries
-- [ ] Create interaction loop between agent and environment
+- [x] Set up agent LLM with tool call capability
+- [x] Implement query generation logic
+- [x] Design context management for multi-hop queries
+- [x] Create interaction loop between agent and environment
 
 ### Phase 3: Reward System
-- [ ] Design reward calculation LLM
-- [ ] Define reward metrics (attack detection, query efficiency, etc.)
-- [ ] Implement reward shaping strategies
+- [x] Design reward calculation LLM
+- [x] Define reward metrics (attack detection, query efficiency, etc.)
+- [ ] Implement reward shaping strategies (basic implementation complete)
 - [ ] Test reward signal quality
 
 ### Phase 4: RL Training

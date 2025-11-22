@@ -3,6 +3,14 @@
 ## Quick Start
 
 1. **Install dependencies**:
+   
+   Using `uv` (recommended):
+   ```bash
+   # Install uv if you haven't already: https://github.com/astral-sh/uv
+   uv sync
+   ```
+   
+   Or using pip:
    ```bash
    pip install -r requirements.txt
    ```
@@ -96,8 +104,12 @@ Make sure your `.env` file exists and contains the required keys. The file shoul
 
 Make sure you've installed all dependencies:
 ```bash
+# Using uv (recommended)
+uv sync
+
+# Or using pip
 pip install -r requirements.txt
 ```
 
-If you're using a virtual environment, make sure it's activated.
+If you're using `uv`, it automatically manages the virtual environment. If using pip, make sure your virtual environment is activated.
 
