@@ -3,7 +3,7 @@ name = "watson"
 version = "0.1.0"
 description = "RL-Trained LLM for Attack Detection via Multi-Hop Log Search"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
     {name = "Watson Team"}
@@ -28,7 +28,7 @@ dependencies = [
     "requests>=2.31.0",
     "wandb>=0.16.0",
     "fastapi>=0.121.3",
-    "uvicorn>=0.33.0",
+    "uvicorn>=0.29.0",
     "colorama>=0.4.6",
     "pandas>=2.0.0",
 ]
