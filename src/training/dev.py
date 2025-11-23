@@ -3,6 +3,7 @@
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+import yaml
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -63,6 +64,40 @@ def main():
         "expected_indicators": scenario.expected_indicators,
         "difficulty": scenario.difficulty,
     }
+
+    # Try to locate the original YAML file for this scenario so the Lit agent
+    # receives the same YAML structure it expects (key: "scenario_yaml").
+    scenario_yaml = None
+    scenarios_dir = Path(__file__).parent.parent / "scenarios"
+    for yaml_file in scenarios_dir.glob("*.yaml"):
+        try:
+            text = yaml_file.read_text(encoding="utf-8")
+            data = yaml.safe_load(text)
+            sid = None
+            if isinstance(data, dict):
+                sid = data.get("scenario", {}).get("id")
+            if sid == scenario.id:
+                scenario_yaml = text
+                break
+        except Exception:
+            continue
+
+    if scenario_yaml is None:
+        # Fallback: create a minimal YAML string that the loader can parse.
+        print("Warning: original scenario YAML not found; using generated minimal YAML")
+        scenario_yaml = yaml.safe_dump({
+            "scenario": {
+                "id": scenario.id,
+                "name": scenario.name,
+                "description": scenario.description,
+                "attack_type": scenario.attack_type,
+                "difficulty": scenario.difficulty,
+            },
+            "ground_truth": {},
+        })
+
+    # Attach YAML string expected by LitWatsonAgent.rollout
+    task["scenario_yaml"] = scenario_yaml
 
     # Prepare mock resources
     resources = MockResources()

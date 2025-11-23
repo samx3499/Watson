@@ -443,6 +443,9 @@ async def _run_investigation_task(investigation_id: str, prompt: str, max_steps:
             # include the sequence of emitted events so the UI can replay them
             # use a shallow copy to avoid circular references when we later emit the final_report event
             final_report["events"] = list(event_log)
+            # include full textual report if available and the final rollout reward
+            final_report["full_report_text"] = final_report.get("summary")
+            final_report["rollout_reward"] = cumulative_reward
             INVESTIGATIONS[investigation_id]["report"] = final_report
             INVESTIGATIONS[investigation_id]["status"] = "completed"
 
@@ -498,6 +501,17 @@ async def _run_investigation_task(investigation_id: str, prompt: str, max_steps:
                 if "Final Report:" in clean_line:
                     collecting_report = True
                     continue
+
+                # Agent completion notification (emit as a discrete event)
+                if clean_line.strip().lower().startswith("agent finished investigation"):
+                    ev_done = {
+                        "type": "agent_finished",
+                        "content": clean_line,
+                        "timestamp": int(asyncio.get_event_loop().time() * 1000),
+                    }
+                    await q.put(ev_done)
+                    event_log.append(ev_done)
+                    continue
                 
                 if collecting_report:
                     if clean_line.startswith("=" * 10): # End of report
@@ -509,58 +523,61 @@ async def _run_investigation_task(investigation_id: str, prompt: str, max_steps:
                 event = None
                 timestamp = int(asyncio.get_event_loop().time() * 1000)
 
-                # Parse Query
-                # Example: Query: Search for inbound connections...
-                if clean_line.startswith("Query:"):
-                    content = clean_line[len("Query:"):].strip()
+                # Parse Reward first (some lines start with 'Query' but contain reward info)
+                # Examples:
+                #  - "Query 1: Reward 0.50 (Cumulative: 0.50)"
+                #  - "Rollout completed. Reward: 20.2"
+                if "Reward" in clean_line:
+                    try:
+                        # Extract reward value (support both 'Reward 0.5' and 'Reward: 0.5')
+                        m = re.search(r"Reward[:\s]*([0-9]+\.?[0-9]*)", clean_line)
+                        if m:
+                            reward_val = float(m.group(1))
+                        else:
+                            reward_val = 0.0
+
+                        # Optional cumulative value
+                        m2 = re.search(r"Cumulative[:\s]*([0-9]+\.?[0-9]*)", clean_line)
+                        if m2:
+                            cumulative_reward = float(m2.group(1))
+
+                        event = {
+                            "type": "reward",
+                            "content": clean_line,
+                            "rewardValue": reward_val,
+                            "cumulativeReward": cumulative_reward,
+                            "timestamp": timestamp,
+                        }
+                    except Exception:
+                        event = None
+
+                # Parse Query (more specific: allow "Query:" or "Query <num>:")
+                elif re.match(r"^Query(?:\s+\d+)?:\s*", clean_line):
+                    # strip the leading 'Query' and any index/colon
+                    content = re.sub(r"^Query(?:\s+\d+)?:\s*", "", clean_line).strip()
                     event = {
                         "type": "action",
                         "content": content,
                         "metadata": "Tool: Natural Language Query",
-                        "timestamp": timestamp
+                        "timestamp": timestamp,
                     }
                     step_count += 1
-                
+
                 # Parse Response
-                # Example: Response: Found connections...
                 elif clean_line.startswith("Response:"):
                     content = clean_line[len("Response:"):].strip()
                     event = {
                         "type": "observation",
                         "content": content,
-                        "timestamp": timestamp
+                        "timestamp": timestamp,
                     }
-
-                # Parse Reward
-                # Example: Query 1: Reward 0.50 (Cumulative: 0.50)
-                elif "Reward" in clean_line and "Cumulative:" in clean_line:
-                    try:
-                        # Extract reward value
-                        # Assuming format: ... Reward <val> (Cumulative: <val>)
-                        parts = clean_line.split("Reward")
-                        if len(parts) > 1:
-                            reward_part = parts[1].split("(")[0].strip()
-                            reward_val = float(reward_part)
-                            
-                            cum_part = clean_line.split("Cumulative:")[1].strip().rstrip(")")
-                            cumulative_reward = float(cum_part)
-
-                            event = {
-                                "type": "reward",
-                                "content": "Reward received",
-                                "rewardValue": reward_val,
-                                "cumulativeReward": cumulative_reward,
-                                "timestamp": timestamp
-                            }
-                    except Exception:
-                        pass # parsing failed, ignore
 
                 # Parse DEBUG/System messages
                 elif clean_line.startswith("DEBUG:") or clean_line.startswith("Testing with scenario:"):
-                     event = {
+                    event = {
                         "type": "thought",
                         "content": clean_line,
-                        "timestamp": timestamp
+                        "timestamp": timestamp,
                     }
                 
                 # If we parsed an event, emit it
@@ -588,6 +605,9 @@ async def _run_investigation_task(investigation_id: str, prompt: str, max_steps:
             
             # include the sequence of emitted events so the UI can replay them
             final_report["events"] = list(event_log)
+            # include full textual report and final rollout reward (if any)
+            final_report["full_report_text"] = summary_text
+            final_report["rollout_reward"] = cumulative_reward
             INVESTIGATIONS[investigation_id]["report"] = final_report
             INVESTIGATIONS[investigation_id]["status"] = "completed"
 
