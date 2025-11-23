@@ -319,153 +319,295 @@ async def _run_investigation_task(investigation_id: str, prompt: str, max_steps:
         await q.put(
             {
                 "type": "system",
-                "content": "Investigation started (Live Agent)",
+                "content": "Investigation started",
                 "timestamp": int(asyncio.get_event_loop().time() * 1000),
             }
         )
 
-        # Run the agent via uv
-        # We run from the workspace root
-        process = await asyncio.create_subprocess_shell(
-            "uv run src/training/dev.py",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd="/workspaces/Watson"
-        )
+        # Check for simulation keywords
+        lower_prompt = (prompt or "").lower()
+        is_simulation = "simulate" in lower_prompt or "demo" in lower_prompt
 
-        # Helper to strip ANSI codes
-        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+        if is_simulation:
+            # Walk a selected simulation sequence and emit matching event types
+            step_count = 0
+            cumulative_reward = 0.0
+            findings = []
+            event_log = []
+            # Select sequence based on the requested prompt; default to the generic sequence.
+            sequence = SIMULATION_SEQUENCE
 
-        step_count = 0
-        cumulative_reward = 0.0
-        event_log = []
-        findings = []
-        
-        # We'll collect the final report summary if printed
-        final_summary_lines = []
-        collecting_report = False
+            if "phishing-credential-harvesting-001" in (prompt or "") or "phishing" in lower_prompt:
+                sequence = PHISHING_SIMULATION_SEQUENCE
 
-        async for line in process.stdout:
-            line_str = line.decode('utf-8').strip()
-            clean_line = ansi_escape.sub('', line_str)
-            
-            if not clean_line:
-                continue
-
-            # Check for final report start
-            if "Final Report:" in clean_line:
-                collecting_report = True
-                continue
-            
-            if collecting_report:
-                if clean_line.startswith("=" * 10): # End of report
-                    collecting_report = False
-                else:
-                    final_summary_lines.append(clean_line)
-                continue
-
-            event = None
-            timestamp = int(asyncio.get_event_loop().time() * 1000)
-
-            # Parse Query
-            # Example: Query: Search for inbound connections...
-            if clean_line.startswith("Query:"):
-                content = clean_line[len("Query:"):].strip()
-                event = {
-                    "type": "action",
-                    "content": content,
-                    "metadata": "Tool: Natural Language Query",
-                    "timestamp": timestamp
-                }
+            for item in sequence:
+                # respect configured max_steps
+                if step_count >= max_steps:
+                    break
+                await asyncio.sleep(item.get("delay", 300) / 1000.0)
                 step_count += 1
-            
-            # Parse Response
-            # Example: Response: Found connections...
-            elif clean_line.startswith("Response:"):
-                content = clean_line[len("Response:"):].strip()
+
+                # If the sequence item is an explicit artifact, construct and emit it
+                if item.get("type") == "artifact":
+                    # Use provided fields if available, otherwise infer from content
+                    desc = str(item.get("description") or item.get("content") or "")
+                    src = item.get("source")
+                    impact = item.get("impact") or "Low"
+                    confidence = float(item.get("confidence") or 0.2)
+
+                    artifact_id = f"A-{investigation_id[:8]}-{len(findings) + 1}"
+                    artifact = {
+                        "id": artifact_id,
+                        "time": int(asyncio.get_event_loop().time() * 1000),
+                        "type": "detection",
+                        "description": desc,
+                        "value": desc,
+                        "impact": impact,
+                        "confidence": round(min(0.99, confidence), 2),
+                        "source": src,
+                        "step": step_count,
+                    }
+                    findings.append(artifact)
+                    ev = {
+                        "type": "artifact",
+                        "artifact": artifact,
+                        "timestamp": int(asyncio.get_event_loop().time() * 1000),
+                    }
+                    await q.put(ev)
+                    event_log.append(ev)
+                    # emit host status update if we can map the artifact source to a known host
+                    host_id = None
+                    host_name = artifact.get("source")
+                    for h in INITIAL_HOSTS:
+                        if h.get("name") and host_name and h.get("name") in str(host_name):
+                            host_id = h.get("id")
+                            break
+
+                    status = "suspicious"
+                    if artifact.get("impact") in ("Critical", "High"):
+                        status = "compromised"
+                    elif artifact.get("impact") == "Medium":
+                        status = "suspicious"
+                    else:
+                        status = "safe"
+
+                    host_ev = {
+                        "type": "host_status",
+                        "host_id": host_id,
+                        "host_name": host_name,
+                        "status": status,
+                        "timestamp": int(asyncio.get_event_loop().time() * 1000),
+                    }
+                    await q.put(host_ev)
+                    event_log.append(host_ev)
+                    # skip emitting the generic event for artifact items
+                    continue
+
+                # Build the generic event for non-artifact items
                 event = {
-                    "type": "observation",
-                    "content": content,
-                    "timestamp": timestamp
+                    "type": item.get("type"),
+                    "content": item.get("content"),
+                    "timestamp": int(asyncio.get_event_loop().time() * 1000),
                 }
+                if item.get("metadata") is not None:
+                    event["metadata"] = item.get("metadata")
 
-            # Parse Reward
-            # Example: Query 1: Reward 0.50 (Cumulative: 0.50)
-            elif "Reward" in clean_line and "Cumulative:" in clean_line:
-                try:
-                    # Extract reward value
-                    # Assuming format: ... Reward <val> (Cumulative: <val>)
-                    parts = clean_line.split("Reward")
-                    if len(parts) > 1:
-                        reward_part = parts[1].split("(")[0].strip()
-                        reward_val = float(reward_part)
-                        
-                        cum_part = clean_line.split("Cumulative:")[1].strip().rstrip(")")
-                        cumulative_reward = float(cum_part)
+                # If the item carries a reward, attach values and also derive an artifact
+                if item.get("rewardValue") is not None:
+                    # attach reward and cumulative reward values (signal-only)
+                    rv = float(item.get("rewardValue"))
+                    cumulative_reward += rv
+                    event["rewardValue"] = rv
+                    event["cumulativeReward"] = cumulative_reward
 
-                        event = {
-                            "type": "reward",
-                            "content": "Reward received",
-                            "rewardValue": reward_val,
-                            "cumulativeReward": cumulative_reward,
-                            "timestamp": timestamp
-                        }
-                except Exception:
-                    pass # parsing failed, ignore
-
-            # Parse DEBUG/System messages
-            elif clean_line.startswith("DEBUG:") or clean_line.startswith("Testing with scenario:"):
-                 event = {
-                    "type": "thought",
-                    "content": clean_line,
-                    "timestamp": timestamp
-                }
-            
-            # If we parsed an event, emit it
-            if event:
+                # Emit the generic event (thought/action/observation/reward etc.)
                 await q.put(event)
                 event_log.append(event)
 
-        await process.wait()
-        
-        # After sequence, assemble a final report
-        summary_text = "\n".join(final_summary_lines) if final_summary_lines else f"Simulated investigation completed with {step_count} steps."
-        
-        final_report = {
-            "investigation_id": investigation_id,
-            "prompt": prompt,
-            "summary": summary_text,
-            "findings": findings if findings else [
-                {
-                    "id": "F-1",
-                    "description": "Automated investigation completed",
-                    "confidence": 1.0,
-                }
-            ],
-        }
-        
-        # include the sequence of emitted events so the UI can replay them
-        final_report["events"] = list(event_log)
-        INVESTIGATIONS[investigation_id]["report"] = final_report
-        INVESTIGATIONS[investigation_id]["status"] = "completed"
+            # After sequence, assemble a final report
+            final_report = {
+                "investigation_id": investigation_id,
+                "prompt": prompt,
+                "summary": f"Simulated investigation completed with {step_count} steps.",
+                "findings": [
+                    {
+                        "id": "F-1",
+                        "description": "Suspicious login from rare country",
+                        "confidence": 0.92,
+                    },
+                    {"id": "F-2", "description": "Unusual data transfer pattern", "confidence": 0.78},
+                ],
+            }
+            # include any dynamic findings discovered during run (artifacts)
+            final_report["findings"] = findings if findings else final_report.get("findings", [])
+            # include the sequence of emitted events so the UI can replay them
+            # use a shallow copy to avoid circular references when we later emit the final_report event
+            final_report["events"] = list(event_log)
+            INVESTIGATIONS[investigation_id]["report"] = final_report
+            INVESTIGATIONS[investigation_id]["status"] = "completed"
 
-        # Emit final system and report events
-        ev1 = {
-            "type": "system",
-            "content": "Final report ready",
-            "report_summary": final_report["summary"],
-            "timestamp": int(asyncio.get_event_loop().time() * 1000),
-        }
-        await q.put(ev1)
-        event_log.append(ev1)
+            # Emit final system and report events (they will not be included in final_report['events'] to avoid circular refs)
+            ev1 = {
+                "type": "system",
+                "content": "Final report ready",
+                "report_summary": final_report["summary"],
+                "timestamp": int(asyncio.get_event_loop().time() * 1000),
+            }
+            await q.put(ev1)
+            # also append to the running event_log for external consumers if desired (kept separate from final_report.events)
+            event_log.append(ev1)
 
-        ev2 = {
-            "type": "final_report",
-            "report": final_report,
-            "timestamp": int(asyncio.get_event_loop().time() * 1000),
-        }
-        await q.put(ev2)
-        event_log.append(ev2)
+            ev2 = {
+                "type": "final_report",
+                "report": final_report,
+                "timestamp": int(asyncio.get_event_loop().time() * 1000),
+            }
+            await q.put(ev2)
+            event_log.append(ev2)
+
+        else:
+            # Run the agent via uv
+            # We run from the workspace root
+            process = await asyncio.create_subprocess_shell(
+                "uv run src/training/dev.py",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd="/workspaces/Watson"
+            )
+
+            # Helper to strip ANSI codes
+            ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+
+            step_count = 0
+            cumulative_reward = 0.0
+            event_log = []
+            findings = []
+            
+            # We'll collect the final report summary if printed
+            final_summary_lines = []
+            collecting_report = False
+
+            async for line in process.stdout:
+                line_str = line.decode('utf-8').strip()
+                clean_line = ansi_escape.sub('', line_str)
+                
+                if not clean_line:
+                    continue
+
+                # Check for final report start
+                if "Final Report:" in clean_line:
+                    collecting_report = True
+                    continue
+                
+                if collecting_report:
+                    if clean_line.startswith("=" * 10): # End of report
+                        collecting_report = False
+                    else:
+                        final_summary_lines.append(clean_line)
+                    continue
+
+                event = None
+                timestamp = int(asyncio.get_event_loop().time() * 1000)
+
+                # Parse Query
+                # Example: Query: Search for inbound connections...
+                if clean_line.startswith("Query:"):
+                    content = clean_line[len("Query:"):].strip()
+                    event = {
+                        "type": "action",
+                        "content": content,
+                        "metadata": "Tool: Natural Language Query",
+                        "timestamp": timestamp
+                    }
+                    step_count += 1
+                
+                # Parse Response
+                # Example: Response: Found connections...
+                elif clean_line.startswith("Response:"):
+                    content = clean_line[len("Response:"):].strip()
+                    event = {
+                        "type": "observation",
+                        "content": content,
+                        "timestamp": timestamp
+                    }
+
+                # Parse Reward
+                # Example: Query 1: Reward 0.50 (Cumulative: 0.50)
+                elif "Reward" in clean_line and "Cumulative:" in clean_line:
+                    try:
+                        # Extract reward value
+                        # Assuming format: ... Reward <val> (Cumulative: <val>)
+                        parts = clean_line.split("Reward")
+                        if len(parts) > 1:
+                            reward_part = parts[1].split("(")[0].strip()
+                            reward_val = float(reward_part)
+                            
+                            cum_part = clean_line.split("Cumulative:")[1].strip().rstrip(")")
+                            cumulative_reward = float(cum_part)
+
+                            event = {
+                                "type": "reward",
+                                "content": "Reward received",
+                                "rewardValue": reward_val,
+                                "cumulativeReward": cumulative_reward,
+                                "timestamp": timestamp
+                            }
+                    except Exception:
+                        pass # parsing failed, ignore
+
+                # Parse DEBUG/System messages
+                elif clean_line.startswith("DEBUG:") or clean_line.startswith("Testing with scenario:"):
+                     event = {
+                        "type": "thought",
+                        "content": clean_line,
+                        "timestamp": timestamp
+                    }
+                
+                # If we parsed an event, emit it
+                if event:
+                    await q.put(event)
+                    event_log.append(event)
+
+            await process.wait()
+            
+            # After sequence, assemble a final report
+            summary_text = "\n".join(final_summary_lines) if final_summary_lines else f"Simulated investigation completed with {step_count} steps."
+            
+            final_report = {
+                "investigation_id": investigation_id,
+                "prompt": prompt,
+                "summary": summary_text,
+                "findings": findings if findings else [
+                    {
+                        "id": "F-1",
+                        "description": "Automated investigation completed",
+                        "confidence": 1.0,
+                    }
+                ],
+            }
+            
+            # include the sequence of emitted events so the UI can replay them
+            final_report["events"] = list(event_log)
+            INVESTIGATIONS[investigation_id]["report"] = final_report
+            INVESTIGATIONS[investigation_id]["status"] = "completed"
+
+            # Emit final system and report events
+            ev1 = {
+                "type": "system",
+                "content": "Final report ready",
+                "report_summary": final_report["summary"],
+                "timestamp": int(asyncio.get_event_loop().time() * 1000),
+            }
+            await q.put(ev1)
+            event_log.append(ev1)
+
+            ev2 = {
+                "type": "final_report",
+                "report": final_report,
+                "timestamp": int(asyncio.get_event_loop().time() * 1000),
+            }
+            await q.put(ev2)
+            event_log.append(ev2)
         
     except asyncio.CancelledError:
         await q.put({"type": "stopped", "message": "Investigation cancelled"})
