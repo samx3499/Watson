@@ -496,97 +496,121 @@ async def _run_investigation_task(investigation_id: str, prompt: str, max_steps:
                 
                 if not clean_line:
                     continue
+                # Buffering logic: accumulate multi-line messages into a pending event
+                # Initialize pending container on first use
+                if "_pending" not in locals():
+                    _pending = {"type": None, "lines": []}
+
+                # Helper to flush pending buffer as an event
+                async def _flush_pending():
+                    nonlocal _pending, step_count, cumulative_reward
+                    if not _pending or not _pending.get("lines"):
+                        _pending = {"type": None, "lines": []}
+                        return
+                    text = " \n ".join(_pending["lines"]).strip()
+                    ts = int(asyncio.get_event_loop().time() * 1000)
+                    ev = None
+                    try:
+                        if _pending["type"] == "reward":
+                            m = re.search(r"Reward[:\s]*([0-9]+\.?[0-9]*)", text)
+                            rv = float(m.group(1)) if m else 0.0
+                            m2 = re.search(r"Cumulative[:\s]*([0-9]+\.?[0-9]*)", text)
+                            if m2:
+                                cumulative_reward = float(m2.group(1))
+                            ev = {
+                                "type": "reward",
+                                "content": text,
+                                "rewardValue": rv,
+                                "cumulativeReward": cumulative_reward,
+                                "timestamp": ts,
+                            }
+                        elif _pending["type"] == "action":
+                            ev = {"type": "action", "content": text, "metadata": "Tool: Natural Language Query", "timestamp": ts}
+                            step_count += 1
+                        elif _pending["type"] == "observation":
+                            ev = {"type": "observation", "content": text, "timestamp": ts}
+                        elif _pending["type"] == "thought":
+                            ev = {"type": "thought", "content": text, "timestamp": ts}
+                        elif _pending["type"] == "agent_finished":
+                            ev = {"type": "agent_finished", "content": text, "timestamp": ts}
+                        else:
+                            # default to thought
+                            ev = {"type": "thought", "content": text, "timestamp": ts}
+                    except Exception:
+                        ev = {"type": "thought", "content": text, "timestamp": ts}
+
+                    if ev:
+                        await q.put(ev)
+                        event_log.append(ev)
+
+                    _pending = {"type": None, "lines": []}
 
                 # Check for final report start
                 if "Final Report:" in clean_line:
+                    # flush any pending before starting final report capture
+                    await _flush_pending()
                     collecting_report = True
                     continue
 
-                # Agent completion notification (emit as a discrete event)
+                # Agent completion notification (may be multi-line)
                 if clean_line.strip().lower().startswith("agent finished investigation"):
-                    ev_done = {
-                        "type": "agent_finished",
-                        "content": clean_line,
-                        "timestamp": int(asyncio.get_event_loop().time() * 1000),
-                    }
-                    await q.put(ev_done)
-                    event_log.append(ev_done)
+                    # flush previous pending event and start a new pending agent_finished
+                    await _flush_pending()
+                    _pending = {"type": "agent_finished", "lines": [clean_line]}
                     continue
-                
+
                 if collecting_report:
-                    if clean_line.startswith("=" * 10): # End of report
+                    if clean_line.startswith("=" * 10):  # End of report
                         collecting_report = False
+                        # flush any pending before finalizing report
+                        await _flush_pending()
                     else:
                         final_summary_lines.append(clean_line)
                     continue
 
-                event = None
-                timestamp = int(asyncio.get_event_loop().time() * 1000)
+                # Determine if this line starts a new prefixed message
+                is_reward = "Reward" in clean_line
+                is_query = bool(re.match(r"^Query(?:\s+\d+)?:\s*", clean_line))
+                is_response = clean_line.startswith("Response:")
+                is_debug = clean_line.startswith("DEBUG:") or clean_line.startswith("Testing with scenario:")
 
-                # Parse Reward first (some lines start with 'Query' but contain reward info)
-                # Examples:
-                #  - "Query 1: Reward 0.50 (Cumulative: 0.50)"
-                #  - "Rollout completed. Reward: 20.2"
-                if "Reward" in clean_line:
-                    try:
-                        # Extract reward value (support both 'Reward 0.5' and 'Reward: 0.5')
-                        m = re.search(r"Reward[:\s]*([0-9]+\.?[0-9]*)", clean_line)
-                        if m:
-                            reward_val = float(m.group(1))
-                        else:
-                            reward_val = 0.0
+                if is_reward:
+                    # flush previous pending and start reward pending
+                    await _flush_pending()
+                    _pending = {"type": "reward", "lines": [clean_line]}
+                    continue
 
-                        # Optional cumulative value
-                        m2 = re.search(r"Cumulative[:\s]*([0-9]+\.?[0-9]*)", clean_line)
-                        if m2:
-                            cumulative_reward = float(m2.group(1))
-
-                        event = {
-                            "type": "reward",
-                            "content": clean_line,
-                            "rewardValue": reward_val,
-                            "cumulativeReward": cumulative_reward,
-                            "timestamp": timestamp,
-                        }
-                    except Exception:
-                        event = None
-
-                # Parse Query (more specific: allow "Query:" or "Query <num>:")
-                elif re.match(r"^Query(?:\s+\d+)?:\s*", clean_line):
-                    # strip the leading 'Query' and any index/colon
+                if is_query:
+                    await _flush_pending()
                     content = re.sub(r"^Query(?:\s+\d+)?:\s*", "", clean_line).strip()
-                    event = {
-                        "type": "action",
-                        "content": content,
-                        "metadata": "Tool: Natural Language Query",
-                        "timestamp": timestamp,
-                    }
-                    step_count += 1
+                    _pending = {"type": "action", "lines": [content]}
+                    continue
 
-                # Parse Response
-                elif clean_line.startswith("Response:"):
+                if is_response:
+                    await _flush_pending()
                     content = clean_line[len("Response:"):].strip()
-                    event = {
-                        "type": "observation",
-                        "content": content,
-                        "timestamp": timestamp,
-                    }
+                    _pending = {"type": "observation", "lines": [content]}
+                    continue
 
-                # Parse DEBUG/System messages
-                elif clean_line.startswith("DEBUG:") or clean_line.startswith("Testing with scenario:"):
-                    event = {
-                        "type": "thought",
-                        "content": clean_line,
-                        "timestamp": timestamp,
-                    }
-                
-                # If we parsed an event, emit it
-                if event:
-                    await q.put(event)
-                    event_log.append(event)
+                if is_debug:
+                    await _flush_pending()
+                    _pending = {"type": "thought", "lines": [clean_line]}
+                    continue
+
+                # Otherwise, it's a continuation line; append to pending (or start a thought)
+                if _pending and _pending.get("type"):
+                    _pending["lines"].append(clean_line)
+                else:
+                    # start a new thought pending
+                    _pending = {"type": "thought", "lines": [clean_line]}
+
+                # Note: pending buffer will be flushed when a new prefixed line appears or at stream end
 
             await process.wait()
             
+            # flush any remaining pending buffer after process ends
+            if "_pending" in locals():
+                await _flush_pending()
             # After sequence, assemble a final report
             summary_text = "\n".join(final_summary_lines) if final_summary_lines else f"Simulated investigation completed with {step_count} steps."
             
