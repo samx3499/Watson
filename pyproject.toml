@@ -54,6 +54,11 @@ dev-dependencies = [
     "ruff>=0.1.0",
 ]
 
+[tool.uv.workspace]
+members = [
+    "backend",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=7.0.0",

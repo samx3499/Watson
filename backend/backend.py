@@ -50,6 +50,17 @@ SCENARIOS = [
         "difficulty": "Hard",
         "description": "Identifies rapid file encryption patterns and shadow copy deletion commands.",
     },
+    {
+        "id": "phishing-credential-harvesting-001",
+        "name": "Phishing Credential Harvesting via Malicious Website",
+        "attack_type": "Phishing",
+        "difficulty": 6,
+        "date_discovered": "2024-03-16",
+        "affected_system": "Windows 11 Enterprise (Build 22621)",
+        "user": "sarah.mitchell@acmecorp.com",
+        "workstation": "WS-ACME-0421",
+        "description": "Phishing credential harvesting via spoofed corporate login page (acmecorp-security.com).",
+    },
 ]
 
 INITIAL_HOSTS = [
@@ -191,6 +202,102 @@ SIMULATION_SEQUENCE = [
     {"type": "thought", "content": "Assemble final findings and confidence scores.", "delay": 300},
 ]
 
+# Detailed phishing simulation sequence for scenario 'phishing-credential-harvesting-001'
+PHISHING_SIMULATION_SEQUENCE = [
+    {
+        "type": "system",
+        "content": "Investigation: Phishing Credential Harvesting detected for WS-ACME-0421",
+        "delay": 100,
+    },
+    {
+        "type": "thought",
+        "content": "Network detections show outbound HTTPS to 185.220.101.45 (acmecorp-security.com).",
+        "delay": 200,
+    },
+    {
+        "type": "action",
+        "content": "Query firewall and proxy logs for connections from WS-ACME-0421 to 185.220.101.45 and related domains.",
+        "metadata": "Tool: Natural Language Query",
+        "delay": 300,
+    },
+    {
+        "type": "translation",
+        "content": 'index=proxy src_ip="192.168.1.45" dest_ip="185.220.101.45" host=acmecorp-security.com | stats count by url',
+        "metadata": "Sim2Real: SQL/SPL Translator",
+        "delay": 200,
+    },
+    {
+        "type": "observation",
+        "content": "Outbound HTTPS observed: WS-ACME-0421 -> 185.220.101.45 (acmecorp-security.com). Cookies set and POST observed.",
+        "delay": 200,
+    },
+    {
+        "type": "reward",
+        "content": "Suspicious domain contacted",
+        "rewardValue": 6,
+        "delay": 150,
+    },
+    {
+        "type": "artifact",
+        "description": "Edge History: Visit to https://acmecorp-security.com/verify-account (08:36:20 UTC)",
+        "source": "WS-ACME-0421",
+        "impact": "High",
+        "confidence": 0.85,
+        "delay": 150,
+    },
+    {
+        "type": "artifact",
+        "description": "Edge Cookies: session_id/tracking_id for acmecorp-security.com (created 08:36:20 UTC)",
+        "source": "WS-ACME-0421",
+        "impact": "High",
+        "confidence": 0.88,
+        "delay": 150,
+    },
+    {
+        "type": "artifact",
+        "description": "verify-account.lnk created pointing to https://acmecorp-security.com/verify-account (08:36:18 UTC)",
+        "source": "WS-ACME-0421",
+        "impact": "Medium",
+        "confidence": 0.8,
+        "delay": 120,
+    },
+    {
+        "type": "observation",
+        "content": "User input observed: credentials submitted to phishing page (POST to 185.220.101.45).",
+        "delay": 200,
+    },
+    {
+        "type": "reward",
+        "content": "Credentials harvested",
+        "rewardValue": 20,
+        "delay": 100,
+    },
+    {
+        "type": "artifact",
+        "description": "Windows Event Log: msedge.exe started (Event ID 7034) and Application error (Event ID 1000) correlating with browser activity.",
+        "source": "WS-ACME-0421",
+        "impact": "Medium",
+        "confidence": 0.65,
+        "delay": 150,
+    },
+    {
+        "type": "thought",
+        "content": "Assemble timeline of browser artifacts, network connections, and cookie creation to confirm credential harvesting.",
+        "delay": 250,
+    },
+    {
+        "type": "observation",
+        "content": "Timeline assembled: 08:36:18 - navigated, 08:36:20 - site loaded/cookies, 08:37:05 - creds entered, 08:37:06 - creds exfiltrated.",
+        "delay": 200,
+    },
+    {
+        "type": "reward",
+        "content": "Phishing incident confirmed",
+        "rewardValue": 12,
+        "delay": 200,
+    },
+]
+
 
 # Expose environment metadata
 @app.get("/environment")
@@ -214,12 +321,22 @@ async def _run_investigation_task(investigation_id: str, prompt: str, max_steps:
             }
         )
 
-        # Walk the pre-defined SIMULATION_SEQUENCE and emit matching event types
+        # Walk a selected simulation sequence and emit matching event types
         step_count = 0
         cumulative_reward = 0.0
         findings = []
         event_log = []
-        for item in SIMULATION_SEQUENCE:
+        # Select sequence based on the requested prompt; default to the generic sequence.
+        sequence = SIMULATION_SEQUENCE
+        try:
+            lower_prompt = (prompt or "").lower()
+        except Exception:
+            lower_prompt = ""
+
+        if "phishing-credential-harvesting-001" in (prompt or "") or "phishing" in lower_prompt:
+            sequence = PHISHING_SIMULATION_SEQUENCE
+
+        for item in sequence:
             # respect configured max_steps
             if step_count >= max_steps:
                 break
