@@ -1,11 +1,13 @@
 import asyncio
 import json
 import uuid
+import os
 from typing import Any, AsyncGenerator, Dict, Optional
 
 import uvicorn
 from fastapi import BackgroundTasks, FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # /workspaces/Watson/src/backend.py
@@ -300,7 +302,7 @@ PHISHING_SIMULATION_SEQUENCE = [
 
 
 # Expose environment metadata
-@app.get("/environment")
+@app.get("/api/environment")
 async def get_environment():
     return {"scenarios": SCENARIOS, "hosts": INITIAL_HOSTS}
 
@@ -472,7 +474,7 @@ async def _run_investigation_task(investigation_id: str, prompt: str, max_steps:
         # Note: we keep queues & reports for retrieval; implement TTL/cleanup in production
 
 
-@app.post("/investigate")
+@app.post("/api/investigate")
 async def start_investigation(req: PromptRequest, background_tasks: BackgroundTasks):
     """
     Start an investigation given a human-readable prompt.
@@ -510,7 +512,7 @@ async def _event_generator(investigation_id: str) -> AsyncGenerator[bytes, None]
             break
 
 
-@app.get("/events/{investigation_id}")
+@app.get("/api/events/{investigation_id}")
 async def stream_events(investigation_id: str):
     """
     Stream a newline-delimited JSON (NDJSON) of events as the agent investigates.
@@ -523,7 +525,7 @@ async def stream_events(investigation_id: str):
     return StreamingResponse(_event_generator(investigation_id), media_type="application/x-ndjson")
 
 
-@app.get("/report/{investigation_id}")
+@app.get("/api/report/{investigation_id}")
 async def get_report(investigation_id: str):
     """
     Fetch the final report of the investigation. If investigation is still running,
@@ -537,6 +539,19 @@ async def get_report(investigation_id: str):
     report = meta.get("report")
     return {"investigation_id": investigation_id, "status": status, "report": report}
 
+frontend_dist = os.path.join(os.path.dirname(__file__), "../frontend/dist")
+
+app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist, "assets")), name="assets")
+
+@app.get("/{full_path:path}")
+async def serve_react_app(full_path: str):
+    # Check if a file exists (like favicon.ico or robots.txt) and serve it
+    file_path = os.path.join(frontend_dist, full_path)
+    if os.path.exists(file_path) and os.path.isfile(file_path):
+        return FileResponse(file_path)
+    
+    # Otherwise, return index.html for SPA routing (React Router)
+    return FileResponse(os.path.join(frontend_dist, "index.html"))
 
 if __name__ == "__main__":
     uvicorn.run("backend:app", host="0.0.0.0", port=8000, reload=True)
