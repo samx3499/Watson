@@ -326,7 +326,7 @@ async def _run_investigation_task(investigation_id: str, prompt: str, max_steps:
 
         # Check for simulation keywords
         lower_prompt = (prompt or "").lower()
-        is_simulation = "simulate" in lower_prompt or "demo" in lower_prompt
+        is_simulation = "simulate" in lower_prompt or "demo" in lower_prompt or 'db_prod' in lower_prompt
 
         if is_simulation:
             # Walk a selected simulation sequence and emit matching event types
